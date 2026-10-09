@@ -10,6 +10,7 @@ AppId={{3D317B00-715F-4B88-A2A5-3AA6915F9F3C}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Aryaan007-sudo
+SetupIconFile=..\assets\form-automation.ico
 DefaultDirName={localappdata}\Programs\FormAutomation
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes

@@ -63,6 +63,9 @@ jobs:
           $env:PLAYWRIGHT_BROWSERS_PATH = $browserPath
           uv run playwright install chromium
 
+      - name: Generate Windows application icon
+        run: uv run python scripts/generate_windows_icon.py
+
       - name: Build standalone executable
         run: >-
           uv run pyside6-deploy run_app.py

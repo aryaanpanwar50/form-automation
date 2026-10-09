@@ -72,6 +72,7 @@ $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\ms-playwright"
 uv sync --locked
 uv pip install --python .venv\Scripts\python.exe pip
 uv run playwright install chromium
+uv run python scripts\generate_windows_icon.py
 uv run pyside6-deploy run_app.py --name FormAutomation --mode standalone --force
 Copy-Item .\ms-playwright .\FormAutomation.dist\ms-playwright -Recurse
 ```
