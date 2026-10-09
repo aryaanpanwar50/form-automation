@@ -25,4 +25,5 @@ build-backend = "uv_build"
 files = ["run_app.py"]
 
 [tool.pyside6.deploy]
+icon = "assets/form-automation.ico"
 extra_args = "--quiet --noinclude-qt-translations --assume-yes-for-downloads --windows-console-mode=disable"
