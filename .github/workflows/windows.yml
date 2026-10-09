@@ -72,7 +72,7 @@ jobs:
       - name: Bundle Chromium and create zip
         shell: pwsh
         run: |
-          $appOutput = Join-Path $env:GITHUB_WORKSPACE "FormAutomation.dist"
+          $appOutput = Join-Path $env:GITHUB_WORKSPACE "deployment\FormAutomation.dist"
           $packageDirectory = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation"
           $browserOutput = Join-Path $packageDirectory "ms-playwright"
           $archivePath = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation-windows-x64.zip"
