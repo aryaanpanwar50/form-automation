@@ -72,13 +72,14 @@ jobs:
       - name: Bundle Chromium and create zip
         shell: pwsh
         run: |
-          $appOutput = Join-Path $env:GITHUB_WORKSPACE "deployment\FormAutomation.dist"
+          $appOutput = Join-Path $env:GITHUB_WORKSPACE "FormAutomation.dist"
+          $builtExecutable = Join-Path $appOutput "run_app.exe"
           $packageDirectory = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation"
           $browserOutput = Join-Path $packageDirectory "ms-playwright"
           $archivePath = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation-windows-x64.zip"
 
-          if (-not (Test-Path -LiteralPath (Join-Path $appOutput "FormAutomation.exe"))) {
-            throw "The standalone executable was not created at $appOutput"
+          if (-not (Test-Path -LiteralPath $builtExecutable)) {
+            throw "The standalone executable was not created at $builtExecutable"
           }
           $chromiumFolders = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "ms-playwright") -Directory -Filter "chromium-*" -ErrorAction SilentlyContinue
           if (-not $chromiumFolders) {
@@ -87,6 +88,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $packageDirectory, $browserOutput | Out-Null
           Copy-Item -Path (Join-Path $appOutput "*") -Destination $packageDirectory -Recurse -Force
+          Rename-Item -LiteralPath (Join-Path $packageDirectory "run_app.exe") -NewName "FormAutomation.exe"
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "ms-playwright\*") -Destination $browserOutput -Recurse -Force
           Compress-Archive -Path $packageDirectory -DestinationPath $archivePath -CompressionLevel Optimal
           Get-Item -LiteralPath $archivePath | Select-Object FullName, Length
