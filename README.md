@@ -49,14 +49,21 @@ database, cloud database, or remote app server is used.
 
 The GitHub Actions workflow at `.github/workflows/windows.yml` runs the unit tests on
 pushes and pull requests. On pushes and manual runs, it builds a Windows x64 app bundle
-and uploads `FormAutomation-windows-x64.zip` as a workflow artifact. Pushing a version
-tag such as `v0.1.0` also creates a GitHub Release with that zip attached.
+and uploads `FormAutomation-windows-x64.zip` and
+`FormAutomation-Setup-windows-x64.exe` as workflow artifacts. Pushing a version tag
+such as `v0.1.0` also creates a GitHub Release with both files attached.
 
 The zip contains the standalone executable, its Qt/Python dependencies, and the
 Playwright Chromium browser. Extract the full folder before running
 `FormAutomation.exe`; the browser folder must remain beside the executable. The first
 launch registers the app to start at Windows sign-in and creates local app data under
 `%LOCALAPPDATA%\FormAutomation`.
+
+Alternatively, run `FormAutomation-Setup-windows-x64.exe` to install the app for the
+current Windows user without administrator access. The installer creates a Start Menu
+shortcut and can optionally create a desktop shortcut. Uninstalling removes the app
+and its sign-in startup entry but leaves local settings and the encrypted Google
+session under `%LOCALAPPDATA%\FormAutomation`.
 
 To build locally on Windows with the MSVC build tools installed:
 
