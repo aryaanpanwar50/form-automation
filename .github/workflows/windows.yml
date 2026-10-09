@@ -1,0 +1,121 @@
+name: Windows CI and release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Run unit tests
+        run: uv run python -m unittest discover -s tests -v
+
+      - name: Compile-check Python source
+        run: uv run python -m compileall -q src tests run_app.py
+
+  build:
+    name: Build Windows app
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      - name: Enable MSVC build tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Add pip for the Qt deployment tool
+        run: uv pip install --python .venv\Scripts\python.exe pip
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: |
+          "PLAYWRIGHT_BROWSERS_PATH=$env:GITHUB_WORKSPACE\ms-playwright" >> $env:GITHUB_ENV
+          uv run playwright install chromium
+
+      - name: Build standalone executable
+        run: >-
+          uv run pyside6-deploy run_app.py
+          --name FormAutomation
+          --mode standalone
+          --force
+          --nuitka-version 4.1.1
+
+      - name: Bundle Chromium and create zip
+        shell: pwsh
+        run: |
+          $appOutput = Join-Path $env:GITHUB_WORKSPACE "FormAutomation.dist"
+          $packageDirectory = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation"
+          $browserOutput = Join-Path $packageDirectory "ms-playwright"
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation-windows-x64.zip"
+
+          if (-not (Test-Path -LiteralPath (Join-Path $appOutput "FormAutomation.exe"))) {
+            throw "The standalone executable was not created at $appOutput"
+          }
+          $chromiumFolders = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "ms-playwright") -Directory -Filter "chromium-*" -ErrorAction SilentlyContinue
+          if (-not $chromiumFolders) {
+            throw "Playwright Chromium was not installed in the expected bundle directory"
+          }
+
+          New-Item -ItemType Directory -Force -Path $packageDirectory, $browserOutput | Out-Null
+          Copy-Item -Path (Join-Path $appOutput "*") -Destination $packageDirectory -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "ms-playwright\*") -Destination $browserOutput -Recurse -Force
+          Compress-Archive -Path $packageDirectory -DestinationPath $archivePath -CompressionLevel Optimal
+          Get-Item -LiteralPath $archivePath | Select-Object FullName, Length
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FormAutomation-windows-x64
+          path: dist/FormAutomation-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: FormAutomation-windows-x64
+          path: dist
+
+      - name: Attach executable bundle to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/FormAutomation-windows-x64.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true

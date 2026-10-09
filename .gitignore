@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.dist/
+*.build/
+ms-playwright/
+pysidedeploy.spec
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+auth-state.json

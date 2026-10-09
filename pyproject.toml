@@ -1,0 +1,22 @@
+[project]
+name = "form-automation"
+version = "0.1.0"
+description = "Local Windows desktop app for scheduling Google Form submissions"
+readme = "README.md"
+authors = [
+    { name = "Aryaan007-sudo", email = "blankgaming75@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "apscheduler>=3.11.3",
+    "cryptography>=50.0.1",
+    "playwright>=1.62.0",
+    "pyside6>=6.10.1",
+]
+
+[project.scripts]
+form-automation = "form_automation:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
