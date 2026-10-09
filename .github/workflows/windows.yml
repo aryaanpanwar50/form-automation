@@ -58,7 +58,9 @@ jobs:
       - name: Install Playwright Chromium
         shell: pwsh
         run: |
-          "PLAYWRIGHT_BROWSERS_PATH=$env:GITHUB_WORKSPACE\ms-playwright" >> $env:GITHUB_ENV
+          $browserPath = Join-Path $env:GITHUB_WORKSPACE "ms-playwright"
+          "PLAYWRIGHT_BROWSERS_PATH=$browserPath" >> $env:GITHUB_ENV
+          $env:PLAYWRIGHT_BROWSERS_PATH = $browserPath
           uv run playwright install chromium
 
       - name: Build standalone executable
