@@ -39,7 +39,7 @@ class RuntimePackagingTests(unittest.TestCase):
                     packaged=True,
                 )
 
-                self.assertEqual(result, str(browser_bundle))
+                self.assertEqual(Path(result).resolve(), browser_bundle.resolve())
                 self.assertEqual(os.environ["PLAYWRIGHT_BROWSERS_PATH"], result)
 
     def test_source_app_does_not_override_browser_path(self) -> None:
