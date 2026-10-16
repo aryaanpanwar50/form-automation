@@ -1,6 +1,6 @@
 [project]
 name = "form-automation"
-version = "0.1.0"
+version = "0.1.4"
 description = "Local Windows desktop app for scheduling Google Form submissions"
 readme = "README.md"
 authors = [
