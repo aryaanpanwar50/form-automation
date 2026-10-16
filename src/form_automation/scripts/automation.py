@@ -13,7 +13,7 @@ def _fill_form(
     storage_state: dict,
     form_responses: dict[str, str],
 ) -> None:
-    browser = playwright.chromium.launch(headless=False)
+    browser = playwright.chromium.launch(headless=True, channel="chromium")
     context = browser.new_context(storage_state=storage_state)
 
     try:
@@ -34,31 +34,34 @@ def _fill_form(
         match work_day:
             case 1:
                 page.get_by_role("radio", name="It was a campus holiday").click()
+                page.get_by_role("button", name="Next").click()
+                page.get_by_role("button", name="Submit").click()
             case 2:
                 page.get_by_role("radio", name="It was a working day, and I").click()
+                page.get_by_role("button", name="Next").click()
+                page.get_by_role("textbox", name="What were your key tasks for").fill(
+                    form_responses["key_tasks"]
+                )
+                page.get_by_role("textbox", name="What challenges/problems did").fill(
+                    form_responses["challenges"]
+                )
+                page.get_by_role("textbox", name="What challenges/problems you").fill(
+                    form_responses["challenge_resolution"]
+                )
+                page.get_by_role("textbox", name="What is your plan for the").fill(
+                    form_responses["tomorrow_plan"]
+                )
+                page.get_by_role("button", name="Next").click()
+                page.get_by_role("button", name="Submit").click()
             case 3:
                 page.get_by_role(
                     "radio",
                     name="It was a working day, but I was on leave or absent",
                 ).click()
+                page.get_by_role("button", name="Next").click()
+                page.get_by_role("button", name="Submit").click()
             case _:
-                raise ValueError(f"Invalid work_day: {work_day}")
-
-        page.get_by_role("button", name="Next").click()
-        page.get_by_role("textbox", name="What were your key tasks for").fill(
-            form_responses["key_tasks"]
-        )
-        page.get_by_role("textbox", name="What challenges/problems did").fill(
-            form_responses["challenges"]
-        )
-        page.get_by_role("textbox", name="What challenges/problems you").fill(
-            form_responses["challenge_resolution"]
-        )
-        page.get_by_role("textbox", name="What is your plan for the").fill(
-            form_responses["tomorrow_plan"]
-        )
-        page.get_by_role("button", name="Next").click()
-        page.get_by_role("button", name="Submit").click()
+                return
         page.wait_for_function(
             """() => {
                 const text = document.body.innerText.toLowerCase();

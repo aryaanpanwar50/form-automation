@@ -61,7 +61,7 @@ jobs:
           $browserPath = Join-Path $env:GITHUB_WORKSPACE "ms-playwright"
           "PLAYWRIGHT_BROWSERS_PATH=$browserPath" >> $env:GITHUB_ENV
           $env:PLAYWRIGHT_BROWSERS_PATH = $browserPath
-          uv run playwright install chromium
+          uv run playwright install chromium --no-shell
 
       - name: Generate Windows application icon
         run: uv run python scripts/generate_windows_icon.py
