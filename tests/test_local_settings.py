@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from form_automation.local_settings import LocalSettingsStore
@@ -23,6 +24,9 @@ class LocalSettingsStoreTests(unittest.TestCase):
                 "automation_active": False,
                 "schedule_time": None,
                 "pending_task": None,
+                "automation_status": None,
+                "calendar_work_days": {},
+                "google_account_email": "",
                 "form_responses": {
                     "key_tasks": "Did today's assigned task",
                     "challenges": "None",
@@ -45,6 +49,9 @@ class LocalSettingsStoreTests(unittest.TestCase):
                 "automation_active": True,
                 "schedule_time": "09:30",
                 "pending_task": None,
+                "automation_status": None,
+                "calendar_work_days": {},
+                "google_account_email": "",
                 "form_responses": {
                     "key_tasks": "Did today's assigned task",
                     "challenges": "None",
@@ -60,6 +67,9 @@ class LocalSettingsStoreTests(unittest.TestCase):
                 "automation_active": True,
                 "schedule_time": "09:30",
                 "pending_task": None,
+                "automation_status": None,
+                "calendar_work_days": {},
+                "google_account_email": "",
                 "form_responses": {
                     "key_tasks": "Did today's assigned task",
                     "challenges": "None",
@@ -81,6 +91,17 @@ class LocalSettingsStoreTests(unittest.TestCase):
         reopened_store = LocalSettingsStore(self.settings_path)
 
         self.assertEqual(reopened_store.get_settings()["form_responses"], responses)
+
+    def test_calendar_override_is_saved_and_can_be_cleared(self) -> None:
+        selected_date = date(2026, 10, 21)
+        self.store.set_calendar_work_day(selected_date, 1)
+
+        self.assertEqual(
+            self.store.get_settings()["calendar_work_days"], {"2026-10-21": 1}
+        )
+
+        self.store.clear_calendar_work_day(selected_date)
+        self.assertEqual(self.store.get_settings()["calendar_work_days"], {})
 
     def test_rejects_incomplete_form_responses(self) -> None:
         with self.assertRaises(ValueError):
@@ -108,6 +129,18 @@ class LocalSettingsStoreTests(unittest.TestCase):
             self.store.update_schedule_time("24:60")
 
         self.assertIsNone(self.store.get_settings()["schedule_time"])
+
+    def test_account_email_is_saved_but_a_password_is_never_a_setting(self) -> None:
+        self.store.update_google_account_email("student@example.com")
+
+        settings = self.store.get_settings()
+        raw_settings = self.settings_path.read_text(encoding="utf-8")
+        self.assertEqual(settings["google_account_email"], "student@example.com")
+        self.assertNotIn("password", raw_settings.lower())
+
+    def test_rejects_an_invalid_account_email(self) -> None:
+        with self.assertRaises(ValueError):
+            self.store.update_google_account_email("not an email")
 
 
 if __name__ == "__main__":

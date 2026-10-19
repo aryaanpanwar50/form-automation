@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "automation_active": False,
     "schedule_time": None,
     "pending_task": None,
+    "automation_status": None,
+    "calendar_work_days": {},
+    # This is not secret.  The optional password is kept separately in Windows
+    # Credential Manager and is never included in this JSON file.
+    "google_account_email": "",
     "form_responses": DEFAULT_FORM_RESPONSES,
 }
 
@@ -58,6 +63,16 @@ class LocalSettingsStore:
             **DEFAULT_FORM_RESPONSES,
             **saved_responses,
         }
+        calendar_work_days = result["calendar_work_days"]
+        if not isinstance(calendar_work_days, dict):
+            raise RuntimeError("Calendar work-day overrides are not a JSON object")
+        for selected_date, work_day in calendar_work_days.items():
+            try:
+                date.fromisoformat(selected_date)
+            except (TypeError, ValueError) as error:
+                raise RuntimeError("Calendar work-day override has an invalid date") from error
+            if work_day not in (1, 2, 3):
+                raise RuntimeError("Calendar work-day override has an invalid work-day")
         return result
 
     def _write_settings(self, settings: dict[str, Any]) -> None:
@@ -91,6 +106,26 @@ class LocalSettingsStore:
         settings["schedule_time"] = schedule_time
         self._write_settings(settings)
 
+    def update_google_account_email(self, email: str) -> None:
+        email = email.strip()
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            raise ValueError("google account email is invalid")
+        settings = self._read_settings()
+        settings["google_account_email"] = email
+        self._write_settings(settings)
+
+    def set_calendar_work_day(self, selected_date: date, work_day: int) -> None:
+        if work_day not in (1, 2, 3):
+            raise ValueError("work_day must be 1, 2, or 3")
+        settings = self._read_settings()
+        settings["calendar_work_days"][selected_date.isoformat()] = work_day
+        self._write_settings(settings)
+
+    def clear_calendar_work_day(self, selected_date: date) -> None:
+        settings = self._read_settings()
+        settings["calendar_work_days"].pop(selected_date.isoformat(), None)
+        self._write_settings(settings)
+
     def update_form_responses(self, responses: dict[str, str]) -> None:
         if set(responses) != set(DEFAULT_FORM_RESPONSES):
             raise ValueError("form_responses must contain all four form fields")
@@ -114,6 +149,23 @@ class LocalSettingsStore:
     def clear_pending_task(self) -> None:
         settings = self._read_settings()
         settings["pending_task"] = None
+        self._write_settings(settings)
+
+    def set_automation_status(self, state: str, code: str, message: str) -> None:
+        if state not in ("submitting", "succeeded", "error"):
+            raise ValueError("automation status state is invalid")
+        settings = self._read_settings()
+        settings["automation_status"] = {
+            "state": state,
+            "code": code,
+            "message": message,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        self._write_settings(settings)
+
+    def clear_automation_status(self) -> None:
+        settings = self._read_settings()
+        settings["automation_status"] = None
         self._write_settings(settings)
 
 

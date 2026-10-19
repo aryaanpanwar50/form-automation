@@ -1,3 +1,4 @@
+import calendar
 import logging
 import sys
 from functools import lru_cache
@@ -6,6 +7,8 @@ from pathlib import Path
 from PySide6.QtCore import (
     QAbstractNativeEventFilter,
     QByteArray,
+    QDate,
+    QObject,
     QSize,
     QSettings,
     QThread,
@@ -33,7 +36,9 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QButtonGroup,
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -44,7 +49,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QLineEdit,
+    QRadioButton,
+    QSpinBox,
     QSystemTrayIcon,
+    QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
@@ -52,15 +63,21 @@ from PySide6.QtWidgets import (
 )
 
 from .local_auth_state import (
-    clear_local_auth_state,
-    get_local_auth_state,
-    has_local_auth_state,
+    clear_local_auth_profile,
+    has_local_auth_profile,
+)
+from .local_credentials import (
+    CredentialStoreError,
+    clear_google_password,
+    get_google_password,
+    save_google_password,
 )
 from .local_paths import APP_DATA_DIRECTORY, LOCAL_PROFILE_ID
 from .local_settings import get_settings_store
 from .power_events import notify_scheduler_on_resume
 from .runtime import configure_playwright_browser_path
 from .scheduler import (
+    run_automation,
     start_scheduler,
     stop_scheduler,
     sync_schedule,
@@ -79,7 +96,7 @@ WORK_DAY_CHOICES = [
 FACE = "#D4D0C8"
 WHITE = "#FFFFFF"
 BLACK = "#000000"
-UI_FONT_FAMILY = "MS Sans Serif"
+UI_FONT_FAMILY = "Tahoma"
 
 
 def draw_bevel(
@@ -200,6 +217,14 @@ class ClassicButton(QPushButton):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(BLACK))
                 painter.drawPolygon(points)
+            elif name == "Previous month":
+                painter.setPen(QPen(QColor(BLACK), 1))
+                painter.drawLine(9 + shift, 4 + shift, 5 + shift, 7 + shift)
+                painter.drawLine(5 + shift, 7 + shift, 9 + shift, 10 + shift)
+            elif name == "Next month":
+                painter.setPen(QPen(QColor(BLACK), 1))
+                painter.drawLine(5 + shift, 4 + shift, 9 + shift, 7 + shift)
+                painter.drawLine(9 + shift, 7 + shift, 5 + shift, 10 + shift)
         elif self.isEnabled():
             painter.setPen(QColor(BLACK))
             painter.drawText(text_rect, flags, self.text())
@@ -222,6 +247,115 @@ class ClassicButton(QPushButton):
             )
             painter.setPen(QPen(QColor(BLACK), 1, Qt.PenStyle.DotLine))
             painter.drawRect(focus_rect)
+
+
+class AutomaticReconnectDialog(QDialog):
+    """Configure the optional password that is held by Credential Manager."""
+
+    def __init__(self, account_email: str, password_saved: bool, parent=None) -> None:
+        super().__init__(parent)
+        self.remove_requested = False
+        self.setWindowTitle("Automatic reconnect")
+        self.setModal(True)
+        self.setFixedWidth(430)
+        self.setStyleSheet(CLASSIC_STYLESHEET.replace("MS Sans Serif", UI_FONT_FAMILY))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 14, 12, 12)
+        layout.setSpacing(8)
+        message = QLabel(
+            "When Google signs this profile out, Form Automation can select this "
+            "account and enter its saved password. Google verification, CAPTCHA, and "
+            "two-step prompts will still require you to reconnect manually."
+        )
+        message.setWordWrap(True)
+        layout.addWidget(message)
+
+        layout.addWidget(QLabel("Google account email:"))
+        self.email_edit = QLineEdit(account_email)
+        self.email_edit.setFixedHeight(22)
+        self.email_edit.setPlaceholderText("name@example.com")
+        layout.addWidget(self.email_edit)
+        layout.addWidget(QLabel("Password:"))
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_edit.setFixedHeight(22)
+        self.password_edit.setPlaceholderText(
+            "A password is already saved" if password_saved else "Enter password"
+        )
+        layout.addWidget(self.password_edit)
+        status = "Password is stored in Windows Credential Manager." if password_saved else "No password is saved yet."
+        self.storage_status = QLabel(status)
+        self.storage_status.setObjectName("accountMessage")
+        layout.addWidget(self.storage_status)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.remove_button = ClassicButton("Remove password")
+        self.remove_button.setFixedWidth(118)
+        self.remove_button.setEnabled(password_saved)
+        self.remove_button.clicked.connect(self._remove)
+        buttons.addWidget(self.remove_button)
+        self.cancel_button = ClassicButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.cancel_button)
+        self.save_button = ClassicButton("Save password")
+        self.save_button.setDefault(True)
+        self.save_button.clicked.connect(self._accept_save)
+        buttons.addWidget(self.save_button)
+        layout.addLayout(buttons)
+
+    def _accept_save(self) -> None:
+        if not self.email_edit.text().strip():
+            QMessageBox.warning(self, "Automatic reconnect", "Enter the Google account email.")
+            return
+        if not self.password_edit.text():
+            QMessageBox.warning(self, "Automatic reconnect", "Enter the account password.")
+            return
+        self.accept()
+
+    def _remove(self) -> None:
+        self.remove_requested = True
+        self.accept()
+
+
+class ClassicRadioButton(QRadioButton):
+    """A reliable Windows-2000 radio indicator across Qt platform themes."""
+
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setFont(QFont(UI_FONT_FAMILY, 8))
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setMinimumHeight(20)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        indicator = self.rect()
+        indicator.setLeft(2)
+        indicator.setTop((self.height() - 13) // 2)
+        indicator.setWidth(13)
+        indicator.setHeight(13)
+        painter.fillRect(indicator, QColor(WHITE))
+        painter.setPen(QPen(QColor("#404040"), 1))
+        painter.drawEllipse(indicator)
+        if self.isChecked():
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(BLACK))
+            painter.drawEllipse(indicator.adjusted(4, 4, -4, -4))
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        text_rect = self.rect().adjusted(22, 0, -1, 0)
+        painter.setPen(QColor(BLACK if self.isEnabled() else "#808080"))
+        painter.drawText(
+            text_rect,
+            int(Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextShowMnemonic),
+            self.text(),
+        )
+        if self.hasFocus() and self.isEnabled():
+            painter.setPen(QPen(QColor(BLACK), 1, Qt.PenStyle.DotLine))
+            painter.drawRect(text_rect.adjusted(0, 2, -2, -3))
 
 
 class ClassicCheckBox(QCheckBox):
@@ -506,11 +640,186 @@ class SessionCaptureWorker(QThread):
             self.succeeded.emit()
 
 
+class SubmissionWorker(QThread):
+    completed = Signal()
+
+    def __init__(self, retry: bool = False, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.retry = retry
+
+    def run(self) -> None:
+        run_automation(retry=self.retry)
+        self.completed.emit()
+
+
 class WindowsPowerEventFilter(QAbstractNativeEventFilter):
     def nativeEventFilter(self, event_type, message):
         if bytes(event_type) in (b"windows_generic_MSG", b"windows_dispatcher_MSG"):
             notify_scheduler_on_resume(message, wakeup_scheduler)
         return False, 0
+
+
+class OutlookCalendarWidget(QWidget):
+    """Classic month grid with per-day work-day badges."""
+
+    dateSelected = Signal(QDate)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._selected_date = QDate.currentDate()
+        self._overrides: dict[str, int] = {}
+        self._default_work_day: int | None = None
+        self._cell_dates: dict[tuple[int, int], QDate] = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(6)
+        toolbar.addWidget(QLabel("Month:"))
+        self.month_combo = QComboBox()
+        for month in range(1, 13):
+            self.month_combo.addItem(calendar.month_name[month], month)
+        self.month_combo.setFixedWidth(105)
+        toolbar.addWidget(self.month_combo)
+        toolbar.addWidget(QLabel("Year:"))
+        self.year_spin = QSpinBox()
+        self.year_spin.setRange(2000, 2100)
+        self.year_spin.setFixedWidth(92)
+        toolbar.addWidget(self.year_spin)
+        self.previous_button = ClassicButton("< Prev")
+        self.previous_button.setFixedSize(58, 23)
+        toolbar.addWidget(self.previous_button)
+        self.next_button = ClassicButton("Next >")
+        self.next_button.setFixedSize(58, 23)
+        toolbar.addWidget(self.next_button)
+        toolbar.addStretch(1)
+        self.today_button = ClassicButton("Today")
+        self.today_button.setFixedSize(52, 23)
+        toolbar.addWidget(self.today_button)
+        layout.addLayout(toolbar)
+
+        self.grid = QTableWidget(5, 8)
+        self.grid.setObjectName("outlookCalendarGrid")
+        self.grid.setHorizontalHeaderLabels(["Wk", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+        self.grid.verticalHeader().hide()
+        self.grid.horizontalHeader().setFixedHeight(22)
+        self.grid.setShowGrid(True)
+        self.grid.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.grid.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.grid.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.grid.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.grid.setFixedHeight(282)
+        self.grid.setColumnWidth(0, 28)
+        for column in range(1, 8):
+            self.grid.horizontalHeader().setSectionResizeMode(
+                column, self.grid.horizontalHeader().ResizeMode.Stretch
+            )
+        self.grid.verticalHeader().setSectionResizeMode(
+            self.grid.verticalHeader().ResizeMode.Fixed
+        )
+        layout.addWidget(self.grid, 1)
+
+        self.month_combo.currentIndexChanged.connect(self._render)
+        self.year_spin.valueChanged.connect(self._render)
+        self.previous_button.clicked.connect(lambda: self._move_month(-1))
+        self.next_button.clicked.connect(lambda: self._move_month(1))
+        self.today_button.clicked.connect(lambda: self.set_selected_date(QDate.currentDate()))
+        self.grid.cellClicked.connect(self._select_cell)
+        self.set_selected_date(self._selected_date)
+
+    def selectedDate(self) -> QDate:  # noqa: N802 - Qt API compatibility
+        return self._selected_date
+
+    def set_selected_date(self, selected_date: QDate) -> None:
+        self._selected_date = selected_date
+        self.month_combo.blockSignals(True)
+        self.year_spin.blockSignals(True)
+        self.month_combo.setCurrentIndex(selected_date.month() - 1)
+        self.year_spin.setValue(selected_date.year())
+        self.month_combo.blockSignals(False)
+        self.year_spin.blockSignals(False)
+        self._render()
+
+    def set_work_days(self, overrides: dict[str, int], default_work_day: int | None) -> None:
+        self._overrides = overrides
+        self._default_work_day = default_work_day
+        self._render()
+
+    def _move_month(self, offset: int) -> None:
+        month = self.month_combo.currentData() + offset
+        year = self.year_spin.value()
+        if month == 0:
+            month, year = 12, year - 1
+        elif month == 13:
+            month, year = 1, year + 1
+        self.month_combo.setCurrentIndex(month - 1)
+        self.year_spin.setValue(year)
+
+    def _select_cell(self, row: int, column: int) -> None:
+        selected_date = self._cell_dates.get((row, column))
+        if selected_date is None:
+            return
+        self._selected_date = selected_date
+        self._render()
+        self.dateSelected.emit(selected_date)
+
+    def _render(self) -> None:
+        if not hasattr(self, "grid"):
+            return
+        year = self.year_spin.value()
+        month = self.month_combo.currentData()
+        month_days = calendar.Calendar(firstweekday=0).monthdatescalendar(year, month)
+        self.grid.setRowCount(len(month_days))
+        self.grid.setFixedHeight(22 + len(month_days) * 49 + 2)
+        for row in range(len(month_days)):
+            self.grid.setRowHeight(row, 49)
+        self._cell_dates.clear()
+        for row, week in enumerate(month_days):
+            week_item = QTableWidgetItem(str(week[0].isocalendar().week))
+            week_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            week_item.setForeground(QColor("#404040"))
+            week_item.setBackground(QColor("#ECE9D8"))
+            self.grid.setItem(row, 0, week_item)
+            for column, current_day in enumerate(week, start=1):
+                current_date = QDate(current_day.year, current_day.month, current_day.day)
+                self._cell_dates[(row, column)] = current_date
+                self.grid.setCellWidget(row, column, self._day_cell(current_date, month))
+
+    def _day_cell(self, current_date: QDate, displayed_month: int) -> QWidget:
+        current_day = current_date.toPython()
+        override = self._overrides.get(current_day.isoformat())
+        work_day = override if override is not None else self._default_work_day
+        cell = QFrame()
+        inactive = current_date.month() != displayed_month
+        selected = current_date == self._selected_date
+        background = "#FBFBF9" if inactive else "#FFFFFF"
+        header = "#F4F3EE" if inactive else "#E0DED9"
+        text = "#808080" if inactive else ("#990000" if current_day.weekday() >= 5 else "#000000")
+        if selected:
+            header, text = "#0A246A", "#FFFFFF"
+        cell.setStyleSheet(
+            f"QFrame {{ background: {background}; border: {'1px dotted #000000' if selected else '0px'}; }}"
+        )
+        layout = QVBoxLayout(cell)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        header_label = QLabel(str(current_date.day()))
+        header_label.setStyleSheet(
+            f"background: {header}; color: {text}; padding: 1px 4px; border-bottom: 1px solid #E0E0E0;"
+        )
+        layout.addWidget(header_label)
+        if not inactive and current_day.weekday() < 5 and override in (1, 2, 3):
+            labels = {1: ("Holiday", "#FFFF99", "#403000"), 2: ("Present", "#D1F2D2", "#0B4F10"), 3: ("Absent", "#FFD0D0", "#600000")}
+            label, badge_background, badge_text = labels[work_day]
+            badge = QLabel(label)
+            badge.setStyleSheet(
+                f"background: {badge_background}; color: {badge_text}; border: 1px solid rgba(0,0,0,0.15); padding: 1px 3px; margin: 3px 4px;"
+            )
+            layout.addWidget(badge)
+        layout.addStretch(1)
+        return cell
 
 
 class _MainWindowBehavior(QMainWindow):
@@ -524,6 +833,49 @@ class _MainWindowBehavior(QMainWindow):
             self.schedule_time.setTime(QTime(hour, minute))
         for key, editor in self.form_response_editors.items():
             editor.setPlainText(settings["form_responses"][key])
+        self._load_calendar_work_day()
+
+    def _selected_calendar_date(self):
+        return self.calendar_view.selectedDate().toPython()
+
+    def _refresh_calendar_marks(self) -> None:
+        settings = self.settings_store.get_settings()
+        self.calendar_view.set_work_days(
+            settings["calendar_work_days"], settings["work_day"]
+        )
+
+    def _load_calendar_work_day(self) -> None:
+        selected_date = self._selected_calendar_date()
+        override = self.settings_store.get_settings()["calendar_work_days"].get(
+            selected_date.isoformat()
+        )
+        self.calendar_work_day_buttons.button(override or 0).setChecked(True)
+        self.calendar_selected_date_label.setText(
+            selected_date.strftime("%A, %d %B %Y")
+        )
+        default_label = self.work_day_combo.currentText()
+        if override is None:
+            self.calendar_override_status.setText(
+                f"Uses app default: {default_label}"
+            )
+        else:
+            self.calendar_override_status.setText("Date-specific work-day type saved.")
+        self._refresh_calendar_marks()
+
+    def _save_calendar_work_day(self) -> None:
+        selected_date = self._selected_calendar_date()
+        work_day = self.calendar_work_day_buttons.checkedId()
+        if work_day in (1, 2, 3):
+            self.settings_store.set_calendar_work_day(selected_date, work_day)
+        else:
+            self.settings_store.clear_calendar_work_day(selected_date)
+        sync_schedule()
+        self._load_calendar_work_day()
+
+    def _clear_calendar_work_day(self) -> None:
+        self.settings_store.clear_calendar_work_day(self._selected_calendar_date())
+        sync_schedule()
+        self._load_calendar_work_day()
 
     def _queue_form_response_save(self) -> None:
         self.response_save_timer.start()
@@ -560,12 +912,7 @@ class _MainWindowBehavior(QMainWindow):
 
     @staticmethod
     def _has_valid_session() -> bool:
-        if not has_local_auth_state(LOCAL_PROFILE_ID):
-            return False
-        try:
-            return get_local_auth_state(LOCAL_PROFILE_ID) is not None
-        except RuntimeError:
-            return False
+        return has_local_auth_profile(LOCAL_PROFILE_ID)
 
     def _connect_google_account(self) -> None:
         if self.session_worker and self.session_worker.isRunning():
@@ -582,10 +929,44 @@ class _MainWindowBehavior(QMainWindow):
         self.session_worker.finished.connect(self._session_capture_finished)
         self.session_worker.start()
 
+    def _configure_automatic_reconnect(self) -> None:
+        settings = self.settings_store.get_settings()
+        try:
+            password_saved = get_google_password(LOCAL_PROFILE_ID) is not None
+        except CredentialStoreError as error:
+            QMessageBox.warning(self, "Automatic reconnect", str(error))
+            return
+        dialog = AutomaticReconnectDialog(
+            settings["google_account_email"], password_saved, self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            if dialog.remove_requested:
+                clear_google_password(LOCAL_PROFILE_ID)
+                self.settings_store.update_google_account_email("")
+                self.session_description.setText(
+                    "Automatic reconnect password removed from Windows Credential Manager."
+                )
+            else:
+                self.settings_store.update_google_account_email(dialog.email_edit.text())
+                save_google_password(LOCAL_PROFILE_ID, dialog.password_edit.text())
+                self.session_description.setText(
+                    "Automatic reconnect is ready. Its password is stored in Windows Credential Manager."
+                )
+        except (CredentialStoreError, ValueError) as error:
+            QMessageBox.warning(self, "Automatic reconnect", str(error))
+
     def _session_capture_succeeded(self) -> None:
+        self.settings_store.set_automation_status(
+            "succeeded",
+            "reconnected",
+            "Google account reconnected. Retry the pending task if it is due.",
+        )
+        sync_schedule()
         self._refresh_session_status()
         self.session_description.setText(
-            "Google is connected. The encrypted session is saved locally on this PC."
+            "Google is connected. The dedicated Chromium profile is saved locally on this PC."
         )
 
     def _session_capture_failed(self, message: str) -> None:
@@ -599,7 +980,7 @@ class _MainWindowBehavior(QMainWindow):
         dialog = QMessageBox(self)
         dialog.setWindowTitle("Remove saved session?")
         dialog.setText(
-            "This removes the encrypted Google session from this PC. "
+            "This removes the dedicated Google Chromium profile from this PC. "
             "It does not affect your Google account."
         )
         remove_button = dialog.addButton(
@@ -610,7 +991,15 @@ class _MainWindowBehavior(QMainWindow):
         if dialog.clickedButton() is not remove_button:
             return
 
-        clear_local_auth_state(LOCAL_PROFILE_ID)
+        clear_local_auth_profile(LOCAL_PROFILE_ID)
+        try:
+            clear_google_password(LOCAL_PROFILE_ID)
+        except CredentialStoreError:
+            # The profile is still safely removed.  A later reconnect setup can
+            # remove any remaining credential if Windows was temporarily busy.
+            pass
+        self.settings_store.update_google_account_email("")
+        self.settings_store.clear_automation_status()
         if self.active_checkbox.isChecked():
             self.active_checkbox.setChecked(False)
         else:
@@ -689,6 +1078,18 @@ class _MainWindowBehavior(QMainWindow):
             self.tray_icon.hide()
         self.close()
 
+    def _retry_pending_task(self) -> None:
+        if self.submission_worker and self.submission_worker.isRunning():
+            return
+        self.retry_button.setEnabled(False)
+        self.ready_status.setText("Submitting pending form...")
+        self.submission_worker = SubmissionWorker(retry=True, parent=self)
+        self.submission_worker.completed.connect(self._refresh_runtime_status)
+        self.submission_worker.finished.connect(
+            lambda: self.retry_button.setEnabled(True)
+        )
+        self.submission_worker.start()
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
         if self.tray_icon and self.tray_icon.isVisible() and not self._allow_close:
             self.hide()
@@ -714,6 +1115,8 @@ class MainWindow(_MainWindowBehavior):
         QMainWindow.__init__(self)
         self.settings_store = get_settings_store()
         self.session_worker: SessionCaptureWorker | None = None
+        self.submission_worker: SubmissionWorker | None = None
+        self._last_notified_status = None
         self._allow_close = False
         self.setWindowTitle("Weekday Form Automation")
         self.setWindowIcon(make_app_icon())
@@ -738,6 +1141,7 @@ class MainWindow(_MainWindowBehavior):
         self.work_day_combo.currentIndexChanged.connect(self._save_settings)
         self.schedule_time.timeChanged.connect(self._save_settings)
         self.active_checkbox.toggled.connect(self._save_settings)
+        self.settings_tabs.currentChanged.connect(self._adjust_window_for_tab)
         self._update_settings_message()
 
         self.geometry_save_timer = QTimer(self)
@@ -751,9 +1155,29 @@ class MainWindow(_MainWindowBehavior):
         self._refresh_session_status()
         self._refresh_status_bar()
         self._setup_tray()
+        self.status_refresh_timer = QTimer(self)
+        self.status_refresh_timer.setInterval(2000)
+        self.status_refresh_timer.timeout.connect(self._refresh_runtime_status)
+        self.status_refresh_timer.start()
         self.power_event_filter = WindowsPowerEventFilter()
         QApplication.instance().installNativeEventFilter(self.power_event_filter)
         start_scheduler()
+
+    def _adjust_window_for_tab(self, index: int) -> None:
+        # Calendar settings are saved per date by its own Save button.  Hiding
+        # the global save there avoids two unrelated Save actions on one view.
+        self.action_row.setVisible(index != 1)
+        self.save_button.setVisible(index != 1)
+        self.save_button.setDefault(index != 1)
+        if self.isMaximized():
+            return
+        if index == 1:
+            self.setMinimumSize(820, 480)
+            self.resize(960, 500)
+        else:
+            self.setMinimumSize(820, 640)
+            if self.height() < 640:
+                self.resize(max(self.width(), 940), 720)
 
     def _build_interface(self) -> None:
         border = WindowBorder(self)
@@ -771,11 +1195,25 @@ class MainWindow(_MainWindowBehavior):
         content_layout.setSpacing(0)
         border_layout.addWidget(content, 1)
 
-        self._build_account_group(content_layout)
-        content_layout.addSpacing(12)
-        self._build_schedule_group(content_layout)
-        content_layout.addSpacing(12)
-        self._build_responses_group(content_layout)
+        self.settings_tabs = QTabWidget()
+        self.settings_tabs.setObjectName("settingsTabs")
+
+        home_tab = QWidget()
+        home_layout = QVBoxLayout(home_tab)
+        home_layout.setContentsMargins(0, 0, 0, 0)
+        home_layout.setSpacing(12)
+        self._build_account_group(home_layout)
+        self._build_schedule_group(home_layout)
+        self._build_responses_group(home_layout)
+        self.settings_tabs.addTab(home_tab, "Home")
+
+        calendar_tab = QWidget()
+        calendar_layout = QVBoxLayout(calendar_tab)
+        calendar_layout.setContentsMargins(0, 0, 0, 0)
+        self._build_calendar_group(calendar_layout)
+        self.settings_tabs.addTab(calendar_tab, "Calendar")
+
+        content_layout.addWidget(self.settings_tabs, 1)
         content_layout.addSpacing(8)
         self._build_action_row(content_layout)
         status_inset = QWidget()
@@ -813,6 +1251,17 @@ class MainWindow(_MainWindowBehavior):
         self.disconnect_button.setFixedSize(145, 23)
         self.disconnect_button.clicked.connect(self._remove_google_account)
         layout.addWidget(self.disconnect_button)
+        self.automatic_reconnect_button = ClassicButton("Automatic reconnect...")
+        self.automatic_reconnect_button.setAccessibleName("Configure automatic reconnect")
+        self.automatic_reconnect_button.setFixedSize(151, 23)
+        self.automatic_reconnect_button.clicked.connect(self._configure_automatic_reconnect)
+        layout.addWidget(self.automatic_reconnect_button)
+        self.retry_button = ClassicButton("&Retry Pending Task")
+        self.retry_button.setAccessibleName("Retry pending task")
+        self.retry_button.setFixedSize(130, 23)
+        self.retry_button.clicked.connect(self._retry_pending_task)
+        self.retry_button.setEnabled(False)
+        layout.addWidget(self.retry_button)
         parent_layout.addWidget(group)
 
     def _build_schedule_group(self, parent_layout: QVBoxLayout) -> None:
@@ -928,6 +1377,72 @@ class MainWindow(_MainWindowBehavior):
         layout.addWidget(self.settings_message)
         parent_layout.addWidget(group)
 
+    def _build_calendar_group(self, parent_layout: QVBoxLayout) -> None:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        calendar_group = EtchedGroupBox("Calendar overrides")
+        calendar_layout = QVBoxLayout(calendar_group)
+        calendar_layout.setContentsMargins(10, 23, 10, 10)
+        calendar_layout.setSpacing(8)
+        calendar_layout.addWidget(
+            QLabel("Select a weekday to view or change its work-day type.")
+        )
+        self.calendar_view = OutlookCalendarWidget()
+        self.calendar_view.setObjectName("calendarView")
+        self.calendar_view.setMinimumSize(470, 330)
+        self.calendar_view.dateSelected.connect(self._load_calendar_work_day)
+        calendar_layout.addWidget(self.calendar_view, 0)
+        calendar_layout.addWidget(
+            QLabel("Yellow: campus holiday   Green: present   Red: leave or absent")
+        )
+        layout.addWidget(calendar_group, 1)
+
+        details_group = EtchedGroupBox("Day details")
+        details_group.setFixedWidth(290)
+        details_layout = QVBoxLayout(details_group)
+        details_layout.setContentsMargins(10, 23, 10, 10)
+        details_layout.setSpacing(9)
+        self.calendar_selected_date_label = QLabel()
+        self.calendar_selected_date_label.setWordWrap(True)
+        details_layout.addWidget(self.calendar_selected_date_label)
+        details_layout.addWidget(QLabel("Work-day type:"))
+        self.calendar_work_day_buttons = QButtonGroup(self)
+        calendar_choices = [
+            ("Use Home default", 0),
+            ("Campus holiday", 1),
+            ("Working day · present", 2),
+            ("Working day · leave or absent", 3),
+        ]
+        for label, work_day in calendar_choices:
+            radio = ClassicRadioButton(label)
+            radio.setObjectName("calendarWorkDayOption")
+            self.calendar_work_day_buttons.addButton(radio, work_day)
+            details_layout.addWidget(radio)
+        details_layout.addSpacing(6)
+        details_layout.addWidget(QLabel("The Home tab is used when no override is saved."))
+        details_layout.addStretch(1)
+
+        actions = QHBoxLayout()
+        self.save_calendar_override_button = ClassicButton("Save")
+        self.save_calendar_override_button.setAccessibleName("Save calendar date")
+        self.save_calendar_override_button.clicked.connect(self._save_calendar_work_day)
+        actions.addWidget(self.save_calendar_override_button)
+        self.clear_calendar_override_button = ClassicButton("Clear")
+        self.clear_calendar_override_button.setAccessibleName("Clear calendar date")
+        self.clear_calendar_override_button.clicked.connect(self._clear_calendar_work_day)
+        actions.addWidget(self.clear_calendar_override_button)
+        details_layout.addLayout(actions)
+
+        self.calendar_override_status = QLabel()
+        self.calendar_override_status.setObjectName("calendarOverrideStatus")
+        self.calendar_override_status.setWordWrap(True)
+        details_layout.addWidget(self.calendar_override_status)
+        layout.addWidget(details_group)
+        parent_layout.addLayout(layout)
+        parent_layout.addStretch(1)
+
     def _build_responses_group(self, parent_layout: QVBoxLayout) -> None:
         group = EtchedGroupBox("Your responses")
         layout = QVBoxLayout(group)
@@ -991,7 +1506,9 @@ class MainWindow(_MainWindowBehavior):
         parent_layout.addWidget(group, 1)
 
     def _build_action_row(self, parent_layout: QVBoxLayout) -> None:
-        actions = QHBoxLayout()
+        self.action_row = QWidget()
+        actions = QHBoxLayout(self.action_row)
+        actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(8)
         actions.addStretch(1)
         self.save_button = ClassicButton("&Save")
@@ -1008,7 +1525,7 @@ class MainWindow(_MainWindowBehavior):
         self.close_button.setMaximumSize(80, 23)
         self.close_button.clicked.connect(self.close)
         actions.addWidget(self.close_button)
-        parent_layout.addLayout(actions)
+        parent_layout.addWidget(self.action_row)
 
     def _build_status_bar(self, parent_layout: QVBoxLayout) -> None:
         status = QWidget()
@@ -1030,33 +1547,79 @@ class MainWindow(_MainWindowBehavior):
         parent_layout.addWidget(status)
 
     def _refresh_session_status(self) -> None:
-        connected = self._has_valid_session()
+        runtime_status = self.settings_store.get_settings()["automation_status"]
+        session_error = runtime_status and runtime_status["code"] in (
+            "session_expired",
+            "session_required",
+        )
+        connected = self._has_valid_session() and not session_error
         self.session_indicator.setStyleSheet(
             "background-color: #008000; border: 1px solid #004000;"
             if connected
-            else "background-color: #808080; border: 1px solid #404040;"
+            else "background-color: #800000; border: 1px solid #400000;"
         )
         if connected:
             self.session_description.setText(
-                "Session saved. The encrypted Google session is stored in this PC's local app data."
+                "Google account connected. The dedicated Chromium profile is stored locally on this PC."
             )
             self.disconnect_button.setEnabled(True)
+        elif session_error:
+            self.session_description.setText(runtime_status["message"])
+            self.disconnect_button.setEnabled(self._has_valid_session())
         else:
             self.session_description.setText(
-                "No saved Google session. Change Google Account to connect."
+                "No connected Google profile. Change Google Account to connect."
             )
             self.disconnect_button.setEnabled(False)
         self._refresh_status_bar()
 
     def _refresh_status_bar(self) -> None:
         active = self.active_checkbox.isChecked()
-        connected = self._has_valid_session()
-        self.automation_status.setText(
-            "Automation: Active" if active else "Automation: Paused"
-        )
+        runtime_status = self.settings_store.get_settings()["automation_status"]
+        if runtime_status:
+            state_text = {
+                "submitting": "Submitting...",
+                "succeeded": "Submitted",
+                "error": "Needs attention",
+            }[runtime_status["state"]]
+            self.automation_status.setText(f"Automation: {state_text}")
+            self.ready_status.setText(runtime_status["message"])
+        else:
+            self.automation_status.setText(
+                "Automation: Active" if active else "Automation: Paused"
+            )
         self.session_status.setText(
-            "Session saved" if connected else "Session not saved"
+            "Reconnect required"
+            if runtime_status and runtime_status["code"] in ("session_expired", "session_required")
+            else "Profile saved" if self._has_valid_session() else "Session not saved"
         )
+        self.retry_button.setEnabled(
+            bool(
+                runtime_status
+                and runtime_status["code"]
+                in ("session_expired", "form_error", "submission_error", "reconnected")
+                and self._has_valid_session()
+                and self.settings_store.get_settings()["pending_task"]
+            )
+        )
+
+    def _refresh_runtime_status(self) -> None:
+        runtime_status = self.settings_store.get_settings()["automation_status"]
+        status_key = (
+            runtime_status["state"],
+            runtime_status["code"],
+            runtime_status["updated_at"],
+        ) if runtime_status else None
+        self._refresh_session_status()
+        if runtime_status and runtime_status["state"] == "error":
+            self.settings_message.setText(runtime_status["message"])
+            if status_key != self._last_notified_status and self.tray_icon:
+                self.tray_icon.showMessage(
+                    "Form Automation needs attention",
+                    runtime_status["message"],
+                    QSystemTrayIcon.MessageIcon.Warning,
+                )
+        self._last_notified_status = status_key
 
     def _save_settings(self, *_args) -> None:
         super()._save_settings(*_args)
@@ -1082,6 +1645,10 @@ class MainWindow(_MainWindowBehavior):
         self.ready_status.setText("Ready")
 
     def _update_settings_message(self) -> None:
+        runtime_status = self.settings_store.get_settings()["automation_status"]
+        if runtime_status and runtime_status["state"] == "error":
+            self.settings_message.setText(runtime_status["message"])
+            return
         time_value = self.schedule_time.time()
         schedule_time = f"{time_value.hour():02d}:{time_value.minute():02d}"
         if self.active_checkbox.isChecked():
@@ -1160,6 +1727,32 @@ QComboBox#workDayCombo QAbstractItemView {
 }
 QLabel#statusText {
     color: #000000; background: transparent; padding: 0px;
+}
+QTabWidget#settingsTabs::pane {
+    border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF;
+    border-right: 1px solid #404040; border-bottom: 1px solid #404040;
+    background: #D4D0C8; top: -1px;
+}
+QTabWidget#settingsTabs QTabBar::tab {
+    background: #D4D0C8; color: #000000; min-width: 52px;
+    padding: 3px 12px 4px 12px; margin-right: 2px;
+    border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF;
+    border-right: 1px solid #404040;
+}
+QTabWidget#settingsTabs QTabBar::tab:selected {
+    font-weight: bold; padding-top: 5px; margin-top: -2px;
+    border-bottom: 1px solid #D4D0C8;
+}
+QTableWidget#outlookCalendarGrid {
+    background: #FFFFFF; color: #000000;
+    border-top: 2px solid #404040; border-left: 2px solid #404040;
+    border-right: 2px solid #FFFFFF; border-bottom: 2px solid #FFFFFF;
+    gridline-color: #D4D0C8;
+}
+QTableWidget#outlookCalendarGrid QHeaderView::section {
+    background: #D4D0C8; color: #000000; padding: 3px 2px;
+    border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF;
+    border-right: 1px solid #808080; border-bottom: 1px solid #808080;
 }
 """
 
