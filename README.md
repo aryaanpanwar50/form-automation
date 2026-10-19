@@ -15,9 +15,10 @@ uv run form-automation
 ```
 
 The first run opens a native desktop window. Choose **Connect Google account**, sign in
-in the Chromium window, and wait for the form to load. The session is encrypted and
-saved locally. Choose a work-day answer and time, edit the four response fields, then
-enable the schedule with the checkbox. These settings save automatically.
+in the Chromium window, and wait for the form to load. The app saves a dedicated local
+Chromium profile for this workflow; it never saves your Google password. Choose a
+work-day answer and time, edit the four response fields, then enable the schedule with
+the checkbox. These settings save automatically.
 
 The app runs the job locally from Monday to Friday while it is open or minimized to
 the Windows system tray. The work-day answer and time save automatically when changed.
@@ -36,14 +37,17 @@ pending task expires; the next task follows the regular daily schedule.
 
 ## Local files
 
-Settings, encrypted browser session, encryption key, and logs are stored under:
+Settings, the dedicated browser profile, legacy encrypted session data, and logs are
+stored under:
 
 ```text
 %LOCALAPPDATA%\FormAutomation
 ```
 
-The schedule and four form responses are stored in a local `settings.json` file. No
-database, cloud database, or remote app server is used.
+The schedule, form responses, and the latest submission status are stored in a local
+`settings.json` file. If Google signs the profile out or a form control changes, the app
+keeps the pending task and shows a tray and in-app error message. No database, cloud
+database, or remote app server is used.
 
 ## Build a Windows executable
 
@@ -62,8 +66,8 @@ launch registers the app to start at Windows sign-in and creates local app data 
 Alternatively, run `FormAutomation-Setup-windows-x64.exe` to install the app for the
 current Windows user without administrator access. The installer creates a Start Menu
 shortcut and can optionally create a desktop shortcut. Uninstalling removes the app
-and its sign-in startup entry but leaves local settings and the encrypted Google
-session under `%LOCALAPPDATA%\FormAutomation`.
+and its sign-in startup entry but leaves local settings and the dedicated Google
+profile under `%LOCALAPPDATA%\FormAutomation`.
 
 To build locally on Windows with the MSVC build tools installed:
 
