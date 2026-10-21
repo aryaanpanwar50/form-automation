@@ -22,6 +22,7 @@ class LocalSettingsStoreTests(unittest.TestCase):
             {
                 "work_day": None,
                 "automation_active": False,
+                "start_at_login": False,
                 "schedule_time": None,
                 "pending_task": None,
                 "automation_status": None,
@@ -36,6 +37,13 @@ class LocalSettingsStoreTests(unittest.TestCase):
             },
         )
 
+    def test_start_at_login_is_disabled_by_default_and_can_be_saved(self) -> None:
+        self.assertFalse(self.store.get_settings()["start_at_login"])
+
+        self.store.update_start_at_login(True)
+
+        self.assertTrue(self.store.get_settings()["start_at_login"])
+
     def test_settings_survive_store_recreation(self) -> None:
         self.store.update_automation_settings(work_day=2, automation_active=True)
         self.store.update_schedule_time("09:30")
@@ -47,6 +55,7 @@ class LocalSettingsStoreTests(unittest.TestCase):
             {
                 "work_day": 2,
                 "automation_active": True,
+                "start_at_login": False,
                 "schedule_time": "09:30",
                 "pending_task": None,
                 "automation_status": None,
@@ -65,6 +74,7 @@ class LocalSettingsStoreTests(unittest.TestCase):
             {
                 "work_day": 2,
                 "automation_active": True,
+                "start_at_login": False,
                 "schedule_time": "09:30",
                 "pending_task": None,
                 "automation_status": None,

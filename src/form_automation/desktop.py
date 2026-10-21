@@ -1,5 +1,6 @@
 import calendar
 import logging
+import platform
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -85,7 +86,7 @@ from .scheduler import (
 )
 from .scripts.automation import test_form_connection
 from .scripts.save_auth import save_auth_for_user
-from .startup import enable_windows_startup
+from .startup import apply_startup_preference
 
 WORK_DAY_CHOICES = [
     ("Choose a work-day type", None),
@@ -251,7 +252,7 @@ class ClassicButton(QPushButton):
 
 
 class AutomaticReconnectDialog(QDialog):
-    """Configure the optional password that is held by Credential Manager."""
+    """Configure the optional password held by the operating system vault."""
 
     def __init__(self, account_email: str, password_saved: bool, parent=None) -> None:
         super().__init__(parent)
@@ -285,7 +286,7 @@ class AutomaticReconnectDialog(QDialog):
             "A password is already saved" if password_saved else "Enter password"
         )
         layout.addWidget(self.password_edit)
-        status = "Password is stored in Windows Credential Manager." if password_saved else "No password is saved yet."
+        status = "Password is stored in this computer's secure credential vault." if password_saved else "No password is saved yet."
         self.storage_status = QLabel(status)
         self.storage_status.setObjectName("accountMessage")
         layout.addWidget(self.storage_status)
@@ -851,6 +852,7 @@ class _MainWindowBehavior(QMainWindow):
         index = self.work_day_combo.findData(settings["work_day"])
         self.work_day_combo.setCurrentIndex(max(index, 0))
         self.active_checkbox.setChecked(settings["automation_active"])
+        self.start_at_login_checkbox.setChecked(settings["start_at_login"])
         if settings["schedule_time"]:
             hour, minute = map(int, settings["schedule_time"].split(":"))
             self.schedule_time.setTime(QTime(hour, minute))
@@ -1021,13 +1023,13 @@ class _MainWindowBehavior(QMainWindow):
                 clear_google_password(LOCAL_PROFILE_ID)
                 self.settings_store.update_google_account_email("")
                 self.session_description.setText(
-                    "Automatic reconnect password removed from Windows Credential Manager."
+                    "Automatic reconnect password removed from this computer's secure credential vault."
                 )
             else:
                 self.settings_store.update_google_account_email(dialog.email_edit.text())
                 save_google_password(LOCAL_PROFILE_ID, dialog.password_edit.text())
                 self.session_description.setText(
-                    "Automatic reconnect is ready. Its password is stored in Windows Credential Manager."
+                    "Automatic reconnect is ready. Its password is stored in this computer's secure credential vault."
                 )
         except (CredentialStoreError, ValueError) as error:
             QMessageBox.warning(self, "Automatic reconnect", str(error))
@@ -1117,6 +1119,24 @@ class _MainWindowBehavior(QMainWindow):
             self.settings_message.setText(
                 "Settings saved. Automatic submission is paused."
             )
+
+    def _save_start_at_login(self, enabled: bool) -> None:
+        """Apply startup only after the user explicitly changes this checkbox."""
+        try:
+            apply_startup_preference(enabled)
+        except OSError as error:
+            self.start_at_login_checkbox.blockSignals(True)
+            self.start_at_login_checkbox.setChecked(not enabled)
+            self.start_at_login_checkbox.blockSignals(False)
+            QMessageBox.warning(self, "Start at sign-in", str(error))
+            return
+
+        self.settings_store.update_start_at_login(enabled)
+        self.settings_message.setText(
+            "Form Automation will start when you sign in."
+            if enabled
+            else "Start at sign-in is disabled."
+        )
 
     def _setup_tray(self) -> None:
         self.tray_icon: QSystemTrayIcon | None = None
@@ -1217,6 +1237,7 @@ class MainWindow(_MainWindowBehavior):
         self.work_day_combo.currentIndexChanged.connect(self._save_settings)
         self.schedule_time.timeChanged.connect(self._save_settings)
         self.active_checkbox.toggled.connect(self._save_settings)
+        self.start_at_login_checkbox.toggled.connect(self._save_start_at_login)
         self.settings_tabs.currentChanged.connect(self._adjust_window_for_tab)
         self._update_settings_message()
 
@@ -1452,6 +1473,10 @@ class MainWindow(_MainWindowBehavior):
         )
         self.active_checkbox.setObjectName("activeCheckbox")
         layout.addWidget(self.active_checkbox)
+
+        self.start_at_login_checkbox = ClassicCheckBox("Start Form Automation when I &sign in")
+        self.start_at_login_checkbox.setObjectName("startAtLoginCheckbox")
+        layout.addWidget(self.start_at_login_checkbox)
 
         self.settings_message = QLabel()
         self.settings_message.setObjectName("settingsMessage")
@@ -1848,16 +1873,23 @@ def main() -> None:
     )
     configure_playwright_browser_path()
     try:
-        enable_windows_startup()
+        settings = get_settings_store().get_settings()
+        apply_startup_preference(settings["start_at_login"])
     except OSError:
         logging.getLogger(__name__).exception(
-            "Could not register Form Automation to start at Windows sign-in"
+            "Could not update Form Automation's start-at-sign-in setting"
         )
 
     application = QApplication(sys.argv)
     application.setApplicationName("Weekday Form Automation")
     application.setWindowIcon(make_app_icon())
     application.setQuitOnLastWindowClosed(False)
+    if platform.system() == "Darwin":
+        application.applicationStateChanged.connect(
+            lambda state: wakeup_scheduler()
+            if state == Qt.ApplicationState.ApplicationActive
+            else None
+        )
     _configure_font(application)
     window = MainWindow()
     window.show()
