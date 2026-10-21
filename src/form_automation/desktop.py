@@ -83,6 +83,7 @@ from .scheduler import (
     sync_schedule,
     wakeup_scheduler,
 )
+from .scripts.automation import test_form_connection
 from .scripts.save_auth import save_auth_for_user
 from .startup import enable_windows_startup
 
@@ -652,6 +653,28 @@ class SubmissionWorker(QThread):
         self.completed.emit()
 
 
+class ConnectionTestWorker(QThread):
+    progressed = Signal(str)
+    succeeded = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, account_email: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.account_email = account_email
+
+    def run(self) -> None:
+        try:
+            message = test_form_connection(
+                LOCAL_PROFILE_ID,
+                self.account_email,
+                self.progressed.emit,
+            )
+        except Exception as error:
+            self.failed.emit(str(error))
+        else:
+            self.succeeded.emit(message)
+
+
 class WindowsPowerEventFilter(QAbstractNativeEventFilter):
     def nativeEventFilter(self, event_type, message):
         if bytes(event_type) in (b"windows_generic_MSG", b"windows_dispatcher_MSG"):
@@ -929,6 +952,58 @@ class _MainWindowBehavior(QMainWindow):
         self.session_worker.finished.connect(self._session_capture_finished)
         self.session_worker.start()
 
+    def _test_form_connection(self) -> None:
+        if (
+            self.connection_test_worker
+            and self.connection_test_worker.isRunning()
+        ) or (self.session_worker and self.session_worker.isRunning()):
+            return
+        if not self._has_valid_session():
+            QMessageBox.warning(
+                self,
+                "Test form connection",
+                "Connect a Google account before testing the form connection.",
+            )
+            return
+
+        self.connection_test_button.setEnabled(False)
+        self.ready_status.setText("Starting form connection test...")
+        self.settings_message.setText("Starting form connection test...")
+        account_email = self.settings_store.get_settings()["google_account_email"]
+        self.connection_test_worker = ConnectionTestWorker(account_email, self)
+        self.connection_test_worker.progressed.connect(self._connection_test_progress)
+        self.connection_test_worker.succeeded.connect(self._connection_test_succeeded)
+        self.connection_test_worker.failed.connect(self._connection_test_failed)
+        self.connection_test_worker.finished.connect(
+            lambda: self.connection_test_button.setEnabled(True)
+        )
+        self.connection_test_worker.start()
+
+    def _connection_test_progress(self, message: str) -> None:
+        self.ready_status.setText(message)
+        self.settings_message.setText(message)
+
+    def _connection_test_succeeded(self, message: str) -> None:
+        self.ready_status.setText(message)
+        self.settings_message.setText(message)
+        if self.tray_icon:
+            self.tray_icon.showMessage(
+                "Form connection test",
+                message,
+                QSystemTrayIcon.MessageIcon.Information,
+            )
+
+    def _connection_test_failed(self, message: str) -> None:
+        self.ready_status.setText(message)
+        self.settings_message.setText(message)
+        if self.tray_icon:
+            self.tray_icon.showMessage(
+                "Form connection test failed",
+                message,
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+        QMessageBox.warning(self, "Form connection test failed", message)
+
     def _configure_automatic_reconnect(self) -> None:
         settings = self.settings_store.get_settings()
         try:
@@ -1116,6 +1191,7 @@ class MainWindow(_MainWindowBehavior):
         self.settings_store = get_settings_store()
         self.session_worker: SessionCaptureWorker | None = None
         self.submission_worker: SubmissionWorker | None = None
+        self.connection_test_worker: ConnectionTestWorker | None = None
         self._last_notified_status = None
         self._allow_close = False
         self.setWindowTitle("Weekday Form Automation")
@@ -1256,6 +1332,11 @@ class MainWindow(_MainWindowBehavior):
         self.automatic_reconnect_button.setFixedSize(151, 23)
         self.automatic_reconnect_button.clicked.connect(self._configure_automatic_reconnect)
         layout.addWidget(self.automatic_reconnect_button)
+        self.connection_test_button = ClassicButton("Test connection")
+        self.connection_test_button.setAccessibleName("Test form connection")
+        self.connection_test_button.setFixedSize(118, 23)
+        self.connection_test_button.clicked.connect(self._test_form_connection)
+        layout.addWidget(self.connection_test_button)
         self.retry_button = ClassicButton("&Retry Pending Task")
         self.retry_button.setAccessibleName("Retry pending task")
         self.retry_button.setFixedSize(130, 23)

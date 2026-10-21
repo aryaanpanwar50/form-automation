@@ -1,14 +1,19 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from form_automation.scripts.automation import (
     GoogleVerificationRequiredError,
+    FormUnavailableError,
     SessionExpiredError,
     _fill_form,
+    _check_form_connection,
     _reconnect_google_account,
     _require_form_checkbox,
+    _save_failure_diagnostics,
 )
 
 
@@ -29,6 +34,9 @@ class FakeLocator:
 
     def is_checked(self, **_kwargs) -> bool:
         return False
+
+    def is_visible(self, **_kwargs) -> bool:
+        return True
 
     def click(self) -> None:
         self.page.actions.append(("click", self.role, self.name))
@@ -82,6 +90,30 @@ class FakePlaywright:
         self.chromium = FakeChromium(self.context)
 
 
+class DiagnosticPage:
+    def screenshot(self, *, path: str, **_kwargs) -> None:
+        Path(path).write_bytes(b"screenshot")
+
+
+class DiagnosticTrace:
+    def __init__(self) -> None:
+        self.started = None
+        self.stopped = None
+
+    def start(self, **kwargs) -> None:
+        self.started = kwargs
+
+    def stop(self, *, path: str | None = None) -> None:
+        self.stopped = path
+        if path:
+            Path(path).write_bytes(b"trace")
+
+
+class DiagnosticContext:
+    def __init__(self) -> None:
+        self.tracing = DiagnosticTrace()
+
+
 class SignInLocator:
     def __init__(self, page, description: str) -> None:
         self.page = page
@@ -117,13 +149,18 @@ class SignInPage:
 
 
 class FormAutomationTests(unittest.TestCase):
-    def run_form(self, work_day: int) -> FakePlaywright:
+    def run_form(self, work_day: int, progress_reporter=None) -> FakePlaywright:
         playwright = FakePlaywright()
         with patch("form_automation.scripts.automation.profile_directory", return_value="profile"):
-            _fill_form(playwright, work_day, RESPONSES)
+            _fill_form(
+                playwright,
+                work_day,
+                RESPONSES,
+                progress_reporter=progress_reporter,
+            )
         self.assertEqual(
             playwright.chromium.launch_options,
-            {"path": "profile", "headless": False, "channel": "chromium"},
+            {"path": "profile", "headless": True, "channel": "chromium"},
         )
         self.assertTrue(playwright.context.closed)
         return playwright
@@ -166,6 +203,105 @@ class FormAutomationTests(unittest.TestCase):
                 ("wait_for_confirmation",),
             ],
         )
+
+    def test_reports_each_submission_stage_without_recording_response_text(self) -> None:
+        stages: list[str] = []
+
+        self.run_form(1, stages.append)
+
+        self.assertEqual(
+            stages,
+            [
+                "Opening Google Form.",
+                "Checking Google session.",
+                "Checking form account checkbox.",
+                "Selecting form account checkbox.",
+                "Selecting Campus holiday.",
+                "Opening confirmation page.",
+                "Submitting Google Form.",
+                "Confirming submitted response.",
+            ],
+        )
+        self.assertTrue(all(RESPONSES["key_tasks"] not in stage for stage in stages))
+
+    def test_connection_test_checks_every_required_control_without_submitting(self) -> None:
+        playwright = FakePlaywright()
+        stages: list[str] = []
+        with patch("form_automation.scripts.automation.profile_directory", return_value="profile"):
+            message = _check_form_connection(playwright, progress_reporter=stages.append)
+
+        self.assertEqual(message, "Form connection test passed. No response was submitted.")
+        self.assertEqual(playwright.page.actions, [("goto", "https://docs.google.com/forms/d/e/1FAIpQLSc8RRUAG8n8nPB9dm21m_MxwHQ-JuDnEj7GnvwEkWXykkKFuQ/viewform")])
+        self.assertTrue(playwright.context.closed)
+        self.assertIn("Checking Campus holiday option.", stages)
+        self.assertIn("Checking Working day - present option.", stages)
+        self.assertIn("Checking Working day - leave or absent option.", stages)
+        self.assertEqual(stages[-1], "Form connection test passed. No response was submitted.")
+
+    def test_connection_test_identifies_a_missing_radio_option(self) -> None:
+        page = FakePage()
+        original_get_by_role = page.get_by_role
+
+        def get_by_role(role: str, name: str):
+            if role == "radio" and name == "It was a campus holiday":
+                locator = FakeLocator(page, role, name)
+                locator.is_visible = lambda **_kwargs: (_ for _ in ()).throw(
+                    PlaywrightTimeoutError("missing radio")
+                )
+                return locator
+            return original_get_by_role(role, name)
+
+        page.get_by_role = get_by_role
+        playwright = FakePlaywright()
+        playwright.page = page
+        playwright.context = FakeContext(page)
+        playwright.chromium = FakeChromium(playwright.context)
+
+        with (
+            patch("form_automation.scripts.automation.profile_directory", return_value="profile"),
+            patch("form_automation.scripts.automation._save_failure_diagnostics", return_value=""),
+            self.assertRaisesRegex(FormUnavailableError, "Campus holiday.*not found"),
+        ):
+            _check_form_connection(playwright)
+
+    def test_failure_diagnostics_save_a_local_screenshot_and_trace(self) -> None:
+        context = DiagnosticContext()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "form_automation.scripts.automation.DIAGNOSTICS_DIRECTORY",
+                Path(temporary_directory),
+            ):
+                message = _save_failure_diagnostics(
+                    context, DiagnosticPage(), "selecting campus holiday", True
+                )
+
+            files = {path.suffix for path in Path(temporary_directory).iterdir()}
+        self.assertIn(".png", files)
+        self.assertIn(".zip", files)
+        self.assertIn("FormAutomation\\diagnostics", message)
+
+    def test_form_error_includes_the_stage_that_failed(self) -> None:
+        page = FakePage()
+        page.get_by_role = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            PlaywrightTimeoutError("missing radio")
+        )
+        playwright = FakePlaywright()
+        playwright.page = page
+        playwright.context = FakeContext(page)
+        playwright.chromium = FakeChromium(playwright.context)
+
+        with (
+            patch(
+                "form_automation.scripts.automation.profile_directory",
+                return_value="profile",
+            ),
+            patch(
+                "form_automation.scripts.automation._save_failure_diagnostics",
+                return_value="",
+            ),
+            self.assertRaisesRegex(FormUnavailableError, "checking form account checkbox"),
+        ):
+            _fill_form(playwright, 1, RESPONSES)
 
     def test_sign_in_redirect_is_reported_as_an_expired_session(self) -> None:
         page = FakePage("https://accounts.google.com/v3/signin")
