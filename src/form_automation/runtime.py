@@ -1,4 +1,4 @@
-"""Runtime helpers shared by source installs and packaged Windows builds."""
+"""Runtime helpers shared by source installs and packaged desktop builds."""
 
 import os
 import sys
@@ -24,7 +24,7 @@ def configure_playwright_browser_path(
     *,
     packaged: bool | None = None,
 ) -> str | None:
-    """Point packaged apps at the bundled Playwright browsers beside the exe."""
+    """Point packaged apps at bundled Playwright browsers beside their executable."""
     current_executable = Path(executable or sys.executable).resolve()
     if packaged is None:
         packaged = is_packaged_application(current_executable)

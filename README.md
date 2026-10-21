@@ -1,4 +1,4 @@
-# Form Automation for Windows
+# Form Automation
 
 A local Python desktop app that schedules the existing Google Form workflow on this PC.
 The app has no cloud database or app-account sign-in. Google is contacted only for the
@@ -26,10 +26,9 @@ At submission time, Chromium opens on this PC and runs the form workflow. Closin
 app from the tray stops scheduled jobs; starting the app again restores the saved
 schedule from local settings.
 
-On first launch, the app registers itself to open when the current Windows user signs
-in. This lets its local scheduler resume after a restart. The registration is per-user
-and does not require administrator access. The app must be opened once after download
-to create the registration.
+Use **Start Form Automation when I sign in** only if you want the local scheduler to
+start automatically after a restart. This is disabled by default and uses a per-user
+startup entry; it does not require administrator access.
 
 One pending task is saved locally. If the PC sleeps through its scheduled time, the app
 runs that task after wake if it is still the same calendar day. At midnight, an older
@@ -44,6 +43,12 @@ stored under:
 %LOCALAPPDATA%\FormAutomation
 ```
 
+On macOS, files are stored under:
+
+```text
+~/Library/Application Support/FormAutomation
+```
+
 The schedule, form responses, and the latest submission status are stored in a local
 `settings.json` file. If Google signs the profile out or a form control changes, the app
 keeps the pending task and shows a tray and in-app error message. No database, cloud
@@ -51,17 +56,16 @@ database, or remote app server is used.
 
 ## Build a Windows executable
 
-The GitHub Actions workflow at `.github/workflows/windows.yml` runs the unit tests on
-pushes and pull requests. On pushes and manual runs, it builds a Windows x64 app bundle
-and uploads `FormAutomation-windows-x64.zip` and
+The GitHub Actions workflow at `.github/workflows/windows.yml` runs the Windows unit
+tests on pushes and pull requests. On pushes and manual runs, it builds a Windows x64
+app bundle and uploads `FormAutomation-windows-x64.zip` and
 `FormAutomation-Setup-windows-x64.exe` as workflow artifacts. Pushing a version tag
 such as `v0.1.0` also creates a GitHub Release with both files attached.
 
 The zip contains the standalone executable, its Qt/Python dependencies, and the
 Playwright Chromium browser. Extract the full folder before running
 `FormAutomation.exe`; the browser folder must remain beside the executable. The first
-launch registers the app to start at Windows sign-in and creates local app data under
-`%LOCALAPPDATA%\FormAutomation`.
+launch creates local app data under `%LOCALAPPDATA%\FormAutomation`.
 
 Alternatively, run `FormAutomation-Setup-windows-x64.exe` to install the app for the
 current Windows user without administrator access. The installer creates a Start Menu
@@ -80,3 +84,16 @@ uv run python scripts\generate_windows_icon.py
 uv run pyside6-deploy run_app.py --name FormAutomation --mode standalone --force
 Copy-Item .\ms-playwright .\FormAutomation.dist\ms-playwright -Recurse
 ```
+
+## Build a macOS DMG
+
+The `.github/workflows/macos.yml` workflow tests both Apple Silicon (`arm64`) and Intel
+(`x64`) runners. On pushes and manual runs, it builds a native `.app` for each
+architecture, embeds matching Playwright Chromium inside the app bundle, and uploads:
+
+- `FormAutomation-macos-arm64.dmg`
+- `FormAutomation-macos-x64.dmg`
+
+The DMGs are currently unsigned. Before public distribution, they should be signed and
+notarized with an Apple Developer certificate; otherwise macOS will show an unidentified
+developer warning on first open.

@@ -1,4 +1,4 @@
-name: macOS CI
+name: macOS CI and packages
 
 on:
   push:
@@ -12,11 +12,22 @@ permissions:
 
 jobs:
   test:
-    name: Tests
-    runs-on: macos-latest
+    name: Tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-15-intel
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Verify runner architecture
+        run: test "$(uname -m)" = "${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -30,4 +41,82 @@ jobs:
         run: uv run python -m unittest discover -s tests -v
 
       - name: Compile-check Python source
-        run: uv run python -m compileall -q src tests run_app.py
+        run: uv run python -m compileall -q src tests run_app.py scripts
+
+  build:
+    name: Build DMG (${{ matrix.arch }})
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Verify runner architecture
+        run: test "$(uname -m)" = "${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        run: uv sync --locked
+
+      - name: Add pip for the Qt deployment tool
+        run: uv pip install --python .venv/bin/python pip
+
+      - name: Install matching Playwright Chromium
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$GITHUB_WORKSPACE/ms-playwright"
+          uv run playwright install chromium --no-shell
+          test -n "$(find "$PLAYWRIGHT_BROWSERS_PATH" -maxdepth 1 -type d -name 'chromium-*' -print -quit)"
+
+      - name: Generate macOS application icon
+        run: uv run python scripts/generate_macos_icon.py
+
+      - name: Build macOS application bundle
+        run: |
+          python -c "from pathlib import Path; path = Path('pyproject.toml'); path.write_text(path.read_text(encoding='utf-8').replace('assets/form-automation.ico', 'assets/form-automation.icns').replace(' --windows-console-mode=disable', ''), encoding='utf-8')"
+          uv run pyside6-deploy run_app.py --name FormAutomation --mode standalone --force --nuitka-version 4.1.1
+          test -d FormAutomation.app
+
+      - name: Bundle Chromium in the application
+        run: |
+          mkdir -p FormAutomation.app/Contents/MacOS/ms-playwright
+          cp -R ms-playwright/. FormAutomation.app/Contents/MacOS/ms-playwright/
+          test -n "$(find FormAutomation.app/Contents/MacOS/ms-playwright -maxdepth 1 -type d -name 'chromium-*' -print -quit)"
+
+      - name: Smoke-test packaged application
+        run: |
+          app_binary="$(find FormAutomation.app/Contents/MacOS -maxdepth 1 -type f -perm -111 -print -quit)"
+          QT_QPA_PLATFORM=offscreen "$app_binary" &
+          app_pid=$!
+          sleep 4
+          kill -0 "$app_pid"
+          kill "$app_pid"
+          wait "$app_pid" || true
+
+      - name: Validate native bundle and create DMG
+        run: |
+          app_binary="$(find FormAutomation.app/Contents/MacOS -maxdepth 1 -type f -perm -111 -print -quit)"
+          test -n "$app_binary"
+          lipo -archs "$app_binary" | tr ' ' '\n' | grep -Fx '${{ matrix.arch }}'
+          bash scripts/create_macos_dmg.sh FormAutomation.app "dist/FormAutomation-macos-${{ matrix.arch }}.dmg"
+          hdiutil verify "dist/FormAutomation-macos-${{ matrix.arch }}.dmg"
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: FormAutomation-macos-${{ matrix.arch }}
+          path: dist/FormAutomation-macos-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+          retention-days: 14

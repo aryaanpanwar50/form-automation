@@ -1,7 +1,7 @@
 [project]
 name = "form-automation"
 version = "0.2.0"
-description = "Local Windows desktop app for scheduling Google Form submissions"
+description = "Local desktop app for scheduling Google Form submissions"
 readme = "README.md"
 authors = [
     { name = "Aryaan007-sudo", email = "blankgaming75@gmail.com" }
