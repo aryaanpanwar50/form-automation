@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import ast
-import shutil
-import subprocess
+import struct
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
@@ -30,28 +29,35 @@ def read_app_icon_svg() -> str:
 
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
-    iconset = root / "assets" / "form-automation.iconset"
     destination = root / "assets" / "form-automation.icns"
-    shutil.rmtree(iconset, ignore_errors=True)
-    iconset.mkdir(parents=True)
     renderer = QSvgRenderer(QByteArray(read_app_icon_svg().encode("utf-8")))
     if not renderer.isValid():
         raise RuntimeError("The app SVG icon could not be loaded")
 
-    for points in (16, 32, 128, 256, 512):
-        for scale in (1, 2):
-            pixels = points * scale
-            image = QImage(pixels, pixels, QImage.Format.Format_ARGB32_Premultiplied)
-            image.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(image)
-            renderer.render(painter)
-            painter.end()
-            suffix = "" if scale == 1 else "@2x"
-            if not image.save(str(iconset / f"icon_{points}x{points}{suffix}.png")):
-                raise RuntimeError(f"Could not render the {pixels}px macOS icon")
+    chunks: list[bytes] = []
+    # Modern ICNS files hold PNG data.  The tags are Apple's standard size tags.
+    for tag, size in (
+        (b"icp4", 16),
+        (b"icp5", 32),
+        (b"icp6", 64),
+        (b"ic07", 128),
+        (b"ic08", 256),
+        (b"ic09", 512),
+        (b"ic10", 1024),
+    ):
+        image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        renderer.render(painter)
+        painter.end()
+        buffer = QBuffer()
+        if not buffer.open(QIODevice.OpenModeFlag.WriteOnly) or not image.save(buffer, "PNG"):
+            raise RuntimeError(f"Could not render the {size}px macOS icon")
+        png_data = bytes(buffer.data())
+        chunks.append(tag + struct.pack(">I", len(png_data) + 8) + png_data)
 
-    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(destination)], check=True)
-    shutil.rmtree(iconset)
+    contents = b"".join(chunks)
+    destination.write_bytes(b"icns" + struct.pack(">I", len(contents) + 8) + contents)
     print(f"Generated {destination}")
 
 

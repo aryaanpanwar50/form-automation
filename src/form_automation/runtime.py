@@ -12,10 +12,13 @@ def is_packaged_application(
 ) -> bool:
     current_executable = Path(executable or sys.executable)
     runtime_is_frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    # Tests and cross-platform tooling can pass a Windows path while running on
+    # macOS/Linux, where pathlib does not treat backslashes as separators.
+    executable_name = str(current_executable).replace("\\", "/").rsplit("/", 1)[-1]
     return bool(
         runtime_is_frozen
         or "__compiled__" in globals()
-        or not current_executable.stem.lower().startswith("python")
+        or not Path(executable_name).stem.lower().startswith("python")
     )
 
 

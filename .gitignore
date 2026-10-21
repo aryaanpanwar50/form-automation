@@ -7,8 +7,6 @@ dist/
 *.build/
 ms-playwright/
 pysidedeploy.spec
-assets/form-automation.icns
-assets/form-automation.iconset/
 wheels/
 *.egg-info
 

@@ -10,7 +10,7 @@ class AppPathsTests(unittest.TestCase):
     def test_windows_uses_local_app_data(self) -> None:
         paths = platform_services.AppPaths.create(
             system_name="Windows",
-            environment={"LOCALAPPDATA": r"C:\\Users\\A\\AppData\\Local"},
+            environment={"LOCALAPPDATA": r"C:\Users\A\AppData\Local"},
             home=Path("C:/Users/A"),
         )
 
@@ -63,8 +63,10 @@ class StartupServiceTests(unittest.TestCase):
                 patch.object(desktop, "APP_DATA_DIRECTORY", Path(directory)),
                 patch.object(desktop, "get_settings_store", return_value=settings_store),
                 patch.object(desktop, "apply_startup_preference") as apply_preference,
+                patch.object(desktop.logging, "basicConfig"),
                 patch.object(desktop, "configure_playwright_browser_path"),
                 patch.object(desktop, "_configure_font"),
+                patch.object(desktop, "make_app_icon"),
                 patch.object(desktop, "MainWindow") as window_class,
                 patch.object(desktop, "QApplication") as application_class,
                 patch.object(desktop.sys, "exit"),

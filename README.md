@@ -87,12 +87,11 @@ Copy-Item .\ms-playwright .\FormAutomation.dist\ms-playwright -Recurse
 
 ## Build a macOS DMG
 
-The `.github/workflows/macos.yml` workflow tests both Apple Silicon (`arm64`) and Intel
-(`x64`) runners. On pushes and manual runs, it builds a native `.app` for each
-architecture, embeds matching Playwright Chromium inside the app bundle, and uploads:
+The `.github/workflows/macos.yml` workflow tests Apple Silicon (`arm64`). On pushes and
+manual runs, it builds a native `.app`, embeds matching Playwright Chromium inside the
+app bundle, and uploads:
 
 - `FormAutomation-macos-arm64.dmg`
-- `FormAutomation-macos-x64.dmg`
 
 The DMGs are currently unsigned. Before public distribution, they should be signed and
 notarized with an Apple Developer certificate; otherwise macOS will show an unidentified
