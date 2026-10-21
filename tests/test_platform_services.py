@@ -53,6 +53,22 @@ class StartupServiceTests(unittest.TestCase):
     def test_macos_startup_is_supported(self) -> None:
         self.assertTrue(platform_services.StartupService(system_name="Darwin").supported)
 
+    def test_linux_startup_is_not_supported(self) -> None:
+        self.assertFalse(platform_services.StartupService(system_name="Linux").supported)
+
+    def test_start_at_login_checkbox_is_disabled_when_startup_is_unsupported(self) -> None:
+        from form_automation import desktop
+
+        with patch.object(desktop, "StartupService") as startup_service:
+            startup_service.return_value.supported = False
+            application = desktop.QApplication.instance() or desktop.QApplication([])
+            checkbox = desktop.ClassicCheckBox("Start Form Automation when I &sign in")
+            checkbox.setEnabled(startup_service().supported)
+
+        self.assertFalse(checkbox.isEnabled())
+        checkbox.deleteLater()
+        application.processEvents()
+
     def test_desktop_entry_point_uses_the_disabled_default_startup_preference(self) -> None:
         from form_automation import desktop
 

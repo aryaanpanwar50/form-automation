@@ -48,8 +48,12 @@ class WindowsStartupCommandTests(unittest.TestCase):
             with (
                 patch("form_automation.startup._macos_launch_agent_path", return_value=launch_agent),
                 patch(
-                    "form_automation.startup.startup_command",
-                    return_value=("/usr/bin/python3", "/usr/bin/python3 -m form_automation", "/tmp/project"),
+                    "form_automation.startup._startup_parts",
+                    return_value=(
+                        "/usr/bin/python3",
+                        ["-m", "form_automation"],
+                        "/tmp/project",
+                    ),
                 ),
             ):
                 enable_macos_startup()
@@ -61,6 +65,28 @@ class WindowsStartupCommandTests(unittest.TestCase):
             self.assertEqual(
                 payload["ProgramArguments"],
                 ["/usr/bin/python3", "-m", "form_automation"],
+            )
+
+    def test_macos_launch_agent_preserves_backslashes_in_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            launch_agent = Path(directory) / "com.formautomation.app.plist"
+            target = r"/Applications/Form\Automation.app/Contents/MacOS/FormAutomation"
+            with (
+                patch("form_automation.startup._macos_launch_agent_path", return_value=launch_agent),
+                patch(
+                    "form_automation.startup._startup_parts",
+                    return_value=(target, ["-m", "form_automation"], "/tmp/project"),
+                ),
+            ):
+                enable_macos_startup()
+
+            import plistlib
+
+            with launch_agent.open("rb") as stream:
+                payload = plistlib.load(stream)
+            self.assertEqual(
+                payload["ProgramArguments"],
+                [target, "-m", "form_automation"],
             )
 
 

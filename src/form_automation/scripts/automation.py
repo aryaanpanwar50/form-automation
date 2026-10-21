@@ -93,7 +93,7 @@ def _save_failure_diagnostics(context, page, stage: str, trace_started: bool) ->
     if not saved_files:
         return ""
     return (
-        " Diagnostic files saved locally in FormAutomation\\diagnostics: "
+        f" Diagnostic files saved locally in {DIAGNOSTICS_DIRECTORY}: "
         + ", ".join(saved_files)
         + "."
     )

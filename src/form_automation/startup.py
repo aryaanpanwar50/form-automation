@@ -3,7 +3,6 @@
 import os
 import platform
 import plistlib
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -15,13 +14,13 @@ RUN_VALUE_NAME = "FormAutomation"
 MACOS_LAUNCH_AGENT = "com.formautomation.app.plist"
 
 
-def startup_command(
+def _startup_parts(
     executable: str | Path | None = None,
     project_directory: str | Path | None = None,
     *,
     packaged: bool | None = None,
-) -> tuple[str, str, str]:
-    """Return the executable, arguments, and working directory for autostart."""
+) -> tuple[Path, list[str], Path]:
+    """Return the launch target, arguments, and working directory for autostart."""
     current_executable = Path(executable or sys.executable).resolve()
     app_directory = Path(project_directory or Path(__file__).resolve().parents[2])
     is_packaged = (
@@ -40,6 +39,21 @@ def startup_command(
         arguments = ["-m", "form_automation"]
         working_directory = app_directory
 
+    return target, arguments, working_directory
+
+
+def startup_command(
+    executable: str | Path | None = None,
+    project_directory: str | Path | None = None,
+    *,
+    packaged: bool | None = None,
+) -> tuple[str, str, str]:
+    """Return the Windows Registry command and associated launch details."""
+    target, arguments, working_directory = _startup_parts(
+        executable,
+        project_directory,
+        packaged=packaged,
+    )
     command = subprocess.list2cmdline([str(target), *arguments])
     return str(target), command, str(working_directory)
 
@@ -81,13 +95,13 @@ def _macos_launch_agent_path() -> Path:
 
 def enable_macos_startup() -> None:
     """Create a per-user LaunchAgent only after explicit user opt-in."""
-    _target, command, working_directory = startup_command()
+    target, arguments, working_directory = _startup_parts()
     launch_agent = _macos_launch_agent_path()
     launch_agent.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "Label": "com.formautomation.app",
-        "ProgramArguments": shlex.split(command),
-        "WorkingDirectory": working_directory,
+        "ProgramArguments": [str(target), *arguments],
+        "WorkingDirectory": str(working_directory),
         "RunAtLoad": True,
     }
     with launch_agent.open("wb") as stream:

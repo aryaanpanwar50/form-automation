@@ -267,18 +267,19 @@ class FormAutomationTests(unittest.TestCase):
     def test_failure_diagnostics_save_a_local_screenshot_and_trace(self) -> None:
         context = DiagnosticContext()
         with tempfile.TemporaryDirectory() as temporary_directory:
+            diagnostics_directory = Path(temporary_directory)
             with patch(
                 "form_automation.scripts.automation.DIAGNOSTICS_DIRECTORY",
-                Path(temporary_directory),
+                diagnostics_directory,
             ):
                 message = _save_failure_diagnostics(
                     context, DiagnosticPage(), "selecting campus holiday", True
                 )
 
-            files = {path.suffix for path in Path(temporary_directory).iterdir()}
+            files = {path.suffix for path in diagnostics_directory.iterdir()}
+            self.assertIn(str(diagnostics_directory), message)
         self.assertIn(".png", files)
         self.assertIn(".zip", files)
-        self.assertIn("FormAutomation\\diagnostics", message)
 
     def test_form_error_includes_the_stage_that_failed(self) -> None:
         page = FakePage()

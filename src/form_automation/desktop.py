@@ -75,6 +75,7 @@ from .local_credentials import (
 )
 from .local_paths import APP_DATA_DIRECTORY, LOCAL_PROFILE_ID
 from .local_settings import get_settings_store
+from .platform_services import StartupService
 from .power_events import notify_scheduler_on_resume
 from .runtime import configure_playwright_browser_path
 from .scheduler import (
@@ -1476,6 +1477,7 @@ class MainWindow(_MainWindowBehavior):
 
         self.start_at_login_checkbox = ClassicCheckBox("Start Form Automation when I &sign in")
         self.start_at_login_checkbox.setObjectName("startAtLoginCheckbox")
+        self.start_at_login_checkbox.setEnabled(StartupService().supported)
         layout.addWidget(self.start_at_login_checkbox)
 
         self.settings_message = QLabel()
