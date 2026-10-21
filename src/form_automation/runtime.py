@@ -1,4 +1,4 @@
-"""Runtime helpers shared by source installs and packaged Windows builds."""
+"""Runtime helpers shared by source installs and packaged desktop builds."""
 
 import os
 import sys
@@ -12,10 +12,13 @@ def is_packaged_application(
 ) -> bool:
     current_executable = Path(executable or sys.executable)
     runtime_is_frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    # Tests and cross-platform tooling can pass a Windows path while running on
+    # macOS/Linux, where pathlib does not treat backslashes as separators.
+    executable_name = str(current_executable).replace("\\", "/").rsplit("/", 1)[-1]
     return bool(
         runtime_is_frozen
         or "__compiled__" in globals()
-        or not current_executable.stem.lower().startswith("python")
+        or not Path(executable_name).stem.lower().startswith("python")
     )
 
 
@@ -24,7 +27,7 @@ def configure_playwright_browser_path(
     *,
     packaged: bool | None = None,
 ) -> str | None:
-    """Point packaged apps at the bundled Playwright browsers beside the exe."""
+    """Point packaged apps at bundled Playwright browsers beside their executable."""
     current_executable = Path(executable or sys.executable).resolve()
     if packaged is None:
         packaged = is_packaged_application(current_executable)

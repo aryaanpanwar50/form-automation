@@ -98,14 +98,16 @@ def run_automation(*, retry: bool = False) -> None:
     from .scripts.automation import AutomationError, SessionExpiredError, submit_form
 
     logger.info("Starting queued Google Form task for %s", task["scheduled_date"])
-    settings_store.set_automation_status(
-        "submitting", "submitting", "Submitting the pending Google Form."
-    )
+    def report_progress(message: str) -> None:
+        settings_store.set_automation_status("submitting", "submitting", message)
+
+    report_progress("Opening Google Form.")
     try:
         submit_form(
             task["work_day"],
             settings["form_responses"],
             account_email=settings["google_account_email"],
+            progress_reporter=report_progress,
         )
     except SessionExpiredError as error:
         settings_store.set_automation_status("error", "session_expired", str(error))

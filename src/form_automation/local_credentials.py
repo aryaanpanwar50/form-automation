@@ -1,15 +1,19 @@
-"""Small Windows Credential Manager wrapper for the optional Google password.
+"""Operating-system credential vault wrapper for the optional Google password.
 
 The application never writes this password to settings.json, the Chromium profile,
-or application logs.  Credential Manager encrypts it for the current Windows user.
+or application logs. Windows Credential Manager and macOS Keychain encrypt it for
+the current user.
 """
 
 from __future__ import annotations
 
 import ctypes
 import os
+import platform
 import re
 from ctypes import wintypes
+
+from .platform_services import MacOSKeychainCredentialStore
 
 
 class CredentialStoreError(RuntimeError):
@@ -75,7 +79,13 @@ def _raise_credential_error(action: str) -> None:
 
 
 def save_google_password(user_id: str, password: str) -> None:
-    """Save a non-empty password for this app profile in Windows Credential Manager."""
+    """Save a non-empty password in the current OS credential vault."""
+    if platform.system() == "Darwin":
+        try:
+            MacOSKeychainCredentialStore().save(user_id, password)
+        except RuntimeError as error:
+            raise CredentialStoreError(str(error)) from error
+        return
     if not password:
         raise ValueError("Password cannot be empty")
     encoded_password = password.encode("utf-16-le")
@@ -93,6 +103,11 @@ def save_google_password(user_id: str, password: str) -> None:
 
 def get_google_password(user_id: str) -> str | None:
     """Return the saved password, or None when automatic reconnect is not enabled."""
+    if platform.system() == "Darwin":
+        try:
+            return MacOSKeychainCredentialStore().get(user_id)
+        except RuntimeError as error:
+            raise CredentialStoreError(str(error)) from error
     credential_pointer = _CredentialPointer()
     api = _credential_api()
     if not api.CredReadW(
@@ -112,6 +127,12 @@ def get_google_password(user_id: str) -> str | None:
 
 def clear_google_password(user_id: str) -> None:
     """Remove the optional reconnect password.  Missing credentials are harmless."""
+    if platform.system() == "Darwin":
+        try:
+            MacOSKeychainCredentialStore().clear(user_id)
+        except RuntimeError as error:
+            raise CredentialStoreError(str(error)) from error
+        return
     if not _credential_api().CredDeleteW(_target_name(user_id), _CRED_TYPE_GENERIC, 0):
         if ctypes.get_last_error() != 1168:
             _raise_credential_error("remove")
