@@ -39,6 +39,8 @@ jobs:
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -78,14 +80,13 @@ jobs:
           --force
           --nuitka-version 4.1.1
 
-      - name: Bundle Chromium and create zip
+      - name: Bundle Chromium for the installer
         shell: pwsh
         run: |
           $appOutput = Join-Path $env:GITHUB_WORKSPACE "FormAutomation.dist"
           $builtExecutable = Join-Path $appOutput "run_app.exe"
           $packageDirectory = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation"
           $browserOutput = Join-Path $packageDirectory "ms-playwright"
-          $archivePath = Join-Path $env:GITHUB_WORKSPACE "dist\FormAutomation-windows-x64.zip"
 
           if (-not (Test-Path -LiteralPath $builtExecutable)) {
             throw "The standalone executable was not created at $builtExecutable"
@@ -99,8 +100,6 @@ jobs:
           Copy-Item -Path (Join-Path $appOutput "*") -Destination $packageDirectory -Recurse -Force
           Rename-Item -LiteralPath (Join-Path $packageDirectory "run_app.exe") -NewName "FormAutomation.exe"
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "ms-playwright\*") -Destination $browserOutput -Recurse -Force
-          Compress-Archive -Path $packageDirectory -DestinationPath $archivePath -CompressionLevel Optimal
-          Get-Item -LiteralPath $archivePath | Select-Object FullName, Length
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
@@ -131,35 +130,15 @@ jobs:
           }
           Get-Item -LiteralPath $setupPath | Select-Object FullName, Length
 
-      - name: Upload Windows build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: FormAutomation-windows-x64
-          path: |
-            dist/FormAutomation-windows-x64.zip
-            dist/FormAutomation-Setup-windows-x64.exe
-          if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: Publish GitHub release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download Windows build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: FormAutomation-windows-x64
-          path: dist
-
-      - name: Attach executable bundle to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/FormAutomation-windows-x64.zip
-            dist/FormAutomation-Setup-windows-x64.exe
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+      - name: Publish setup installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:GITHUB_REF_NAME --title "Form Automation $env:GITHUB_REF_NAME" --generate-notes
+          }
+          gh release upload $env:GITHUB_REF_NAME "dist\FormAutomation-Setup-windows-x64.exe" --clobber

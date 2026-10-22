@@ -48,6 +48,8 @@ jobs:
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +94,11 @@ jobs:
           cp -R ms-playwright/. FormAutomation.app/Contents/MacOS/ms-playwright/
           test -n "$(find FormAutomation.app/Contents/MacOS/ms-playwright -maxdepth 1 -type d -name 'chromium-*' -print -quit)"
 
+      - name: Ad-hoc sign and verify macOS application
+        run: |
+          codesign --force --deep --sign - FormAutomation.app
+          codesign --verify --deep --strict --verbose=2 FormAutomation.app
+
       - name: Smoke-test packaged application
         run: |
           app_binary="$(find FormAutomation.app/Contents/MacOS -maxdepth 1 -type f -perm -111 -print -quit)"
@@ -110,36 +117,14 @@ jobs:
           bash scripts/create_macos_dmg.sh FormAutomation.app "dist/FormAutomation-macos-${{ matrix.arch }}.dmg"
           hdiutil verify "dist/FormAutomation-macos-${{ matrix.arch }}.dmg"
 
-      - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: FormAutomation-macos-${{ matrix.arch }}
-          path: dist/FormAutomation-macos-${{ matrix.arch }}.dmg
-          if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: Attach macOS DMGs to release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download macOS DMGs
-        uses: actions/download-artifact@v4
-        with:
-          pattern: FormAutomation-macos-*
-          path: dist
-          merge-multiple: true
-
-      - name: Wait for Windows release and upload macOS DMGs
+      - name: Wait for Windows release and publish macOS DMG
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           for attempt in {1..40}; do
-            if gh release upload "$GITHUB_REF_NAME" dist/FormAutomation-macos-*.dmg --clobber; then
+            if gh release upload "$GITHUB_REF_NAME" "dist/FormAutomation-macos-${{ matrix.arch }}.dmg" --clobber; then
               exit 0
             fi
             sleep 15
