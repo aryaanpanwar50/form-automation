@@ -96,8 +96,8 @@ jobs:
 
       - name: Ad-hoc sign and verify macOS application
         run: |
-          codesign --force --deep --sign - FormAutomation.app
-          codesign --verify --deep --strict --verbose=2 FormAutomation.app
+          codesign --force --sign - FormAutomation.app
+          codesign --verify --strict --verbose=2 FormAutomation.app
 
       - name: Smoke-test packaged application
         run: |
