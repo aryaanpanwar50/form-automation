@@ -16,7 +16,6 @@ DEFAULT_FORM_RESPONSES: dict[str, str] = {
 DEFAULT_SETTINGS: dict[str, Any] = {
     "work_day": None,
     "automation_active": False,
-    "start_at_login": False,
     "schedule_time": None,
     "pending_task": None,
     "automation_status": None,
@@ -57,6 +56,9 @@ class LocalSettingsStore:
             ) from error
 
         result = {**DEFAULT_SETTINGS, **settings}
+        # Start-at-sign-in is no longer a supported app feature.  Ignore an
+        # old saved value so legacy installs cannot recreate a startup entry.
+        result.pop("start_at_login", None)
         saved_responses = result["form_responses"]
         if not isinstance(saved_responses, dict):
             raise RuntimeError("Local form responses are not a JSON object")
@@ -105,11 +107,6 @@ class LocalSettingsStore:
         parse_schedule_time(schedule_time)
         settings = self._read_settings()
         settings["schedule_time"] = schedule_time
-        self._write_settings(settings)
-
-    def update_start_at_login(self, enabled: bool) -> None:
-        settings = self._read_settings()
-        settings["start_at_login"] = bool(enabled)
         self._write_settings(settings)
 
     def update_google_account_email(self, email: str) -> None:

@@ -94,10 +94,34 @@ jobs:
           cp -R ms-playwright/. FormAutomation.app/Contents/MacOS/ms-playwright/
           test -n "$(find FormAutomation.app/Contents/MacOS/ms-playwright -maxdepth 1 -type d -name 'chromium-*' -print -quit)"
 
+      - name: Move Playwright data to application resources
+        run: |
+          resources_directory="FormAutomation.app/Contents/Resources"
+          mkdir -p "$resources_directory"
+          for directory in playwright ms-playwright; do
+            source_directory="FormAutomation.app/Contents/MacOS/$directory"
+            destination_directory="$resources_directory/$directory"
+            test -d "$source_directory"
+            mv "$source_directory" "$destination_directory"
+            ln -s "../Resources/$directory" "$source_directory"
+            test -L "$source_directory"
+            test -d "$destination_directory"
+          done
+
       - name: Ad-hoc sign and verify macOS application
         run: |
+          while IFS= read -r -d '' candidate; do
+            if file -b "$candidate" | grep -q 'Mach-O'; then
+              codesign --force --sign - "$candidate"
+            fi
+          done < <(find FormAutomation.app/Contents -type f -print0)
+
+          while IFS= read -r -d '' bundle; do
+            codesign --force --sign - "$bundle"
+          done < <(find FormAutomation.app/Contents -depth -type d \( -name '*.app' -o -name '*.appex' -o -name '*.framework' -o -name '*.xpc' \) -print0)
+
           codesign --force --sign - FormAutomation.app
-          codesign --verify --strict --verbose=2 FormAutomation.app
+          codesign --verify --deep --strict --verbose=2 FormAutomation.app
 
       - name: Smoke-test packaged application
         run: |

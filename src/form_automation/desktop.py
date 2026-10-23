@@ -10,13 +10,13 @@ from PySide6.QtCore import (
     QByteArray,
     QDate,
     QObject,
-    QSize,
+    QPoint,
     QSettings,
+    QSize,
+    Qt,
     QThread,
     QTime,
     QTimer,
-    Qt,
-    QPoint,
     Signal,
 )
 from PySide6.QtGui import (
@@ -36,8 +36,8 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
@@ -45,22 +45,22 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
-    QPushButton,
     QPlainTextEdit,
-    QLineEdit,
+    QPushButton,
     QRadioButton,
+    QSizePolicy,
     QSpinBox,
     QSystemTrayIcon,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
-    QSizePolicy,
 )
 
 from .local_auth_state import (
@@ -75,7 +75,6 @@ from .local_credentials import (
 )
 from .local_paths import APP_DATA_DIRECTORY, LOCAL_PROFILE_ID
 from .local_settings import get_settings_store
-from .platform_services import StartupService
 from .power_events import notify_scheduler_on_resume
 from .runtime import configure_playwright_browser_path
 from .scheduler import (
@@ -102,9 +101,7 @@ BLACK = "#000000"
 UI_FONT_FAMILY = "Tahoma"
 
 
-def draw_bevel(
-    painter: QPainter, rect, *, sunken: bool, button: bool = False
-) -> None:
+def draw_bevel(painter: QPainter, rect, *, sunken: bool, button: bool = False) -> None:
     """Draw the paired one-pixel light and shadow lines used by classic controls."""
     rect = rect.adjusted(0, 0, -1, -1)
     if rect.width() < 4 or rect.height() < 4:
@@ -209,7 +206,11 @@ class ClassicButton(QPushButton):
                 painter.setPen(QPen(QColor(BLACK), 2))
                 painter.drawLine(4 + shift, 3 + shift, 11 + shift, 9 + shift)
                 painter.drawLine(11 + shift, 3 + shift, 4 + shift, 9 + shift)
-            elif name in ("Open work-day choices", "Increase submission time", "Decrease submission time"):
+            elif name in (
+                "Open work-day choices",
+                "Increase submission time",
+                "Decrease submission time",
+            ):
                 if name == "Increase submission time":
                     points = [(5, 5), (10, 5), (7, 2)]
                 elif name == "Decrease submission time":
@@ -287,7 +288,11 @@ class AutomaticReconnectDialog(QDialog):
             "A password is already saved" if password_saved else "Enter password"
         )
         layout.addWidget(self.password_edit)
-        status = "Password is stored in this computer's secure credential vault." if password_saved else "No password is saved yet."
+        status = (
+            "Password is stored in this computer's secure credential vault."
+            if password_saved
+            else "No password is saved yet."
+        )
         self.storage_status = QLabel(status)
         self.storage_status.setObjectName("accountMessage")
         layout.addWidget(self.storage_status)
@@ -310,10 +315,14 @@ class AutomaticReconnectDialog(QDialog):
 
     def _accept_save(self) -> None:
         if not self.email_edit.text().strip():
-            QMessageBox.warning(self, "Automatic reconnect", "Enter the Google account email.")
+            QMessageBox.warning(
+                self, "Automatic reconnect", "Enter the Google account email."
+            )
             return
         if not self.password_edit.text():
-            QMessageBox.warning(self, "Automatic reconnect", "Enter the account password.")
+            QMessageBox.warning(
+                self, "Automatic reconnect", "Enter the account password."
+            )
             return
         self.accept()
 
@@ -425,10 +434,14 @@ class EtchedGroupBox(QGroupBox):
         painter.drawLine(gap_start + 1, line_y + 1, gap_end + 1, line_y + 1)
         painter.drawLine(1, line_y + 1, 1, self.height() - 2)
         painter.drawLine(1, self.height() - 2, self.width() - 2, self.height() - 2)
-        painter.drawLine(self.width() - 2, line_y + 1, self.width() - 2, self.height() - 2)
+        painter.drawLine(
+            self.width() - 2, line_y + 1, self.width() - 2, self.height() - 2
+        )
 
         painter.setPen(QColor(BLACK))
-        title_rect = self.rect().adjusted(8, line_y - title_metrics.height() // 2, -8, 0)
+        title_rect = self.rect().adjusted(
+            8, line_y - title_metrics.height() // 2, -8, 0
+        )
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
@@ -513,7 +526,10 @@ class ClassicTitleBar(QWidget):
         painter.fillRect(self.rect(), gradient)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
-        if event.button() == Qt.MouseButton.LeftButton and not self.window.isMaximized():
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and not self.window.isMaximized()
+        ):
             handle = self.window.windowHandle()
             if handle:
                 handle.startSystemMove()
@@ -591,7 +607,11 @@ class StatusPanel(QWidget):
         layout.addWidget(self.label, 1)
         self.size_grip = SizeGrip(self) if grip else None
         if self.size_grip:
-            layout.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+            layout.addWidget(
+                self.size_grip,
+                0,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
+            )
 
     def setText(self, text: str) -> None:  # noqa: N802 - status-panel convenience
         self.label.setText(text)
@@ -624,7 +644,9 @@ class SizeGrip(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
         if event.button() == Qt.MouseButton.LeftButton:
             handle = self.window().windowHandle()
-            if handle and handle.startSystemResize(Qt.Edge.RightEdge | Qt.Edge.BottomEdge):
+            if handle and handle.startSystemResize(
+                Qt.Edge.RightEdge | Qt.Edge.BottomEdge
+            ):
                 event.accept()
                 return
         super().mousePressEvent(event)
@@ -726,7 +748,9 @@ class OutlookCalendarWidget(QWidget):
 
         self.grid = QTableWidget(5, 8)
         self.grid.setObjectName("outlookCalendarGrid")
-        self.grid.setHorizontalHeaderLabels(["Wk", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+        self.grid.setHorizontalHeaderLabels(
+            ["Wk", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        )
         self.grid.verticalHeader().hide()
         self.grid.horizontalHeader().setFixedHeight(22)
         self.grid.setShowGrid(True)
@@ -750,7 +774,9 @@ class OutlookCalendarWidget(QWidget):
         self.year_spin.valueChanged.connect(self._render)
         self.previous_button.clicked.connect(lambda: self._move_month(-1))
         self.next_button.clicked.connect(lambda: self._move_month(1))
-        self.today_button.clicked.connect(lambda: self.set_selected_date(QDate.currentDate()))
+        self.today_button.clicked.connect(
+            lambda: self.set_selected_date(QDate.currentDate())
+        )
         self.grid.cellClicked.connect(self._select_cell)
         self.set_selected_date(self._selected_date)
 
@@ -767,7 +793,9 @@ class OutlookCalendarWidget(QWidget):
         self.year_spin.blockSignals(False)
         self._render()
 
-    def set_work_days(self, overrides: dict[str, int], default_work_day: int | None) -> None:
+    def set_work_days(
+        self, overrides: dict[str, int], default_work_day: int | None
+    ) -> None:
         self._overrides = overrides
         self._default_work_day = default_work_day
         self._render()
@@ -808,9 +836,13 @@ class OutlookCalendarWidget(QWidget):
             week_item.setBackground(QColor("#ECE9D8"))
             self.grid.setItem(row, 0, week_item)
             for column, current_day in enumerate(week, start=1):
-                current_date = QDate(current_day.year, current_day.month, current_day.day)
+                current_date = QDate(
+                    current_day.year, current_day.month, current_day.day
+                )
                 self._cell_dates[(row, column)] = current_date
-                self.grid.setCellWidget(row, column, self._day_cell(current_date, month))
+                self.grid.setCellWidget(
+                    row, column, self._day_cell(current_date, month)
+                )
 
     def _day_cell(self, current_date: QDate, displayed_month: int) -> QWidget:
         current_day = current_date.toPython()
@@ -821,7 +853,11 @@ class OutlookCalendarWidget(QWidget):
         selected = current_date == self._selected_date
         background = "#FBFBF9" if inactive else "#FFFFFF"
         header = "#F4F3EE" if inactive else "#E0DED9"
-        text = "#808080" if inactive else ("#990000" if current_day.weekday() >= 5 else "#000000")
+        text = (
+            "#808080"
+            if inactive
+            else ("#990000" if current_day.weekday() >= 5 else "#000000")
+        )
         if selected:
             header, text = "#0A246A", "#FFFFFF"
         cell.setStyleSheet(
@@ -836,7 +872,11 @@ class OutlookCalendarWidget(QWidget):
         )
         layout.addWidget(header_label)
         if not inactive and current_day.weekday() < 5 and override in (1, 2, 3):
-            labels = {1: ("Holiday", "#FFFF99", "#403000"), 2: ("Present", "#D1F2D2", "#0B4F10"), 3: ("Absent", "#FFD0D0", "#600000")}
+            labels = {
+                1: ("Holiday", "#FFFF99", "#403000"),
+                2: ("Present", "#D1F2D2", "#0B4F10"),
+                3: ("Absent", "#FFD0D0", "#600000"),
+            }
             label, badge_background, badge_text = labels[work_day]
             badge = QLabel(label)
             badge.setStyleSheet(
@@ -853,7 +893,6 @@ class _MainWindowBehavior(QMainWindow):
         index = self.work_day_combo.findData(settings["work_day"])
         self.work_day_combo.setCurrentIndex(max(index, 0))
         self.active_checkbox.setChecked(settings["automation_active"])
-        self.start_at_login_checkbox.setChecked(settings["start_at_login"])
         if settings["schedule_time"]:
             hour, minute = map(int, settings["schedule_time"].split(":"))
             self.schedule_time.setTime(QTime(hour, minute))
@@ -881,9 +920,7 @@ class _MainWindowBehavior(QMainWindow):
         )
         default_label = self.work_day_combo.currentText()
         if override is None:
-            self.calendar_override_status.setText(
-                f"Uses app default: {default_label}"
-            )
+            self.calendar_override_status.setText(f"Uses app default: {default_label}")
         else:
             self.calendar_override_status.setText("Date-specific work-day type saved.")
         self._refresh_calendar_marks()
@@ -957,8 +994,7 @@ class _MainWindowBehavior(QMainWindow):
 
     def _test_form_connection(self) -> None:
         if (
-            self.connection_test_worker
-            and self.connection_test_worker.isRunning()
+            self.connection_test_worker and self.connection_test_worker.isRunning()
         ) or (self.session_worker and self.session_worker.isRunning()):
             return
         if not self._has_valid_session():
@@ -971,7 +1007,6 @@ class _MainWindowBehavior(QMainWindow):
 
         self.connection_test_button.setEnabled(False)
         self.ready_status.setText("Starting form connection test...")
-        self.settings_message.setText("Starting form connection test...")
         account_email = self.settings_store.get_settings()["google_account_email"]
         self.connection_test_worker = ConnectionTestWorker(account_email, self)
         self.connection_test_worker.progressed.connect(self._connection_test_progress)
@@ -984,11 +1019,9 @@ class _MainWindowBehavior(QMainWindow):
 
     def _connection_test_progress(self, message: str) -> None:
         self.ready_status.setText(message)
-        self.settings_message.setText(message)
 
     def _connection_test_succeeded(self, message: str) -> None:
         self.ready_status.setText(message)
-        self.settings_message.setText(message)
         if self.tray_icon:
             self.tray_icon.showMessage(
                 "Form connection test",
@@ -998,7 +1031,6 @@ class _MainWindowBehavior(QMainWindow):
 
     def _connection_test_failed(self, message: str) -> None:
         self.ready_status.setText(message)
-        self.settings_message.setText(message)
         if self.tray_icon:
             self.tray_icon.showMessage(
                 "Form connection test failed",
@@ -1027,7 +1059,9 @@ class _MainWindowBehavior(QMainWindow):
                     "Automatic reconnect password removed from this computer's secure credential vault."
                 )
             else:
-                self.settings_store.update_google_account_email(dialog.email_edit.text())
+                self.settings_store.update_google_account_email(
+                    dialog.email_edit.text()
+                )
                 save_google_password(LOCAL_PROFILE_ID, dialog.password_edit.text())
                 self.session_description.setText(
                     "Automatic reconnect is ready. Its password is stored in this computer's secure credential vault."
@@ -1111,33 +1145,13 @@ class _MainWindowBehavior(QMainWindow):
         sync_schedule()
 
         if validation_message:
-            self.settings_message.setText(validation_message)
+            self.ready_status.setText(validation_message)
         elif automation_active:
-            self.settings_message.setText(
+            self.ready_status.setText(
                 f"Saved. Weekday submissions are scheduled at {schedule_time}."
             )
         else:
-            self.settings_message.setText(
-                "Settings saved. Automatic submission is paused."
-            )
-
-    def _save_start_at_login(self, enabled: bool) -> None:
-        """Apply startup only after the user explicitly changes this checkbox."""
-        try:
-            apply_startup_preference(enabled)
-        except OSError as error:
-            self.start_at_login_checkbox.blockSignals(True)
-            self.start_at_login_checkbox.setChecked(not enabled)
-            self.start_at_login_checkbox.blockSignals(False)
-            QMessageBox.warning(self, "Start at sign-in", str(error))
-            return
-
-        self.settings_store.update_start_at_login(enabled)
-        self.settings_message.setText(
-            "Form Automation will start when you sign in."
-            if enabled
-            else "Start at sign-in is disabled."
-        )
+            self.ready_status.setText("Settings saved. Automatic submission is paused.")
 
     def _setup_tray(self) -> None:
         self.tray_icon: QSystemTrayIcon | None = None
@@ -1238,9 +1252,8 @@ class MainWindow(_MainWindowBehavior):
         self.work_day_combo.currentIndexChanged.connect(self._save_settings)
         self.schedule_time.timeChanged.connect(self._save_settings)
         self.active_checkbox.toggled.connect(self._save_settings)
-        self.start_at_login_checkbox.toggled.connect(self._save_start_at_login)
         self.settings_tabs.currentChanged.connect(self._adjust_window_for_tab)
-        self._update_settings_message()
+        self._update_ready_status()
 
         self.geometry_save_timer = QTimer(self)
         self.geometry_save_timer.setSingleShot(True)
@@ -1350,9 +1363,13 @@ class MainWindow(_MainWindowBehavior):
         self.disconnect_button.clicked.connect(self._remove_google_account)
         layout.addWidget(self.disconnect_button)
         self.automatic_reconnect_button = ClassicButton("Automatic reconnect...")
-        self.automatic_reconnect_button.setAccessibleName("Configure automatic reconnect")
+        self.automatic_reconnect_button.setAccessibleName(
+            "Configure automatic reconnect"
+        )
         self.automatic_reconnect_button.setFixedSize(151, 23)
-        self.automatic_reconnect_button.clicked.connect(self._configure_automatic_reconnect)
+        self.automatic_reconnect_button.clicked.connect(
+            self._configure_automatic_reconnect
+        )
         layout.addWidget(self.automatic_reconnect_button)
         self.connection_test_button = ClassicButton("Test connection")
         self.connection_test_button.setAccessibleName("Test form connection")
@@ -1469,20 +1486,10 @@ class MainWindow(_MainWindowBehavior):
         fields.addLayout(time_column)
         layout.addLayout(fields)
 
-        self.active_checkbox = ClassicCheckBox(
-            "&Enable Monday to Friday automation"
-        )
+        self.active_checkbox = ClassicCheckBox("&Enable Monday to Friday automation")
         self.active_checkbox.setObjectName("activeCheckbox")
         layout.addWidget(self.active_checkbox)
 
-        self.start_at_login_checkbox = ClassicCheckBox("Start Form Automation when I &sign in")
-        self.start_at_login_checkbox.setObjectName("startAtLoginCheckbox")
-        self.start_at_login_checkbox.setEnabled(StartupService().supported)
-        layout.addWidget(self.start_at_login_checkbox)
-
-        self.settings_message = QLabel()
-        self.settings_message.setObjectName("settingsMessage")
-        layout.addWidget(self.settings_message)
         parent_layout.addWidget(group)
 
     def _build_calendar_group(self, parent_layout: QVBoxLayout) -> None:
@@ -1529,7 +1536,9 @@ class MainWindow(_MainWindowBehavior):
             self.calendar_work_day_buttons.addButton(radio, work_day)
             details_layout.addWidget(radio)
         details_layout.addSpacing(6)
-        details_layout.addWidget(QLabel("The Home tab is used when no override is saved."))
+        details_layout.addWidget(
+            QLabel("The Home tab is used when no override is saved.")
+        )
         details_layout.addStretch(1)
 
         actions = QHBoxLayout()
@@ -1539,7 +1548,9 @@ class MainWindow(_MainWindowBehavior):
         actions.addWidget(self.save_calendar_override_button)
         self.clear_calendar_override_button = ClassicButton("Clear")
         self.clear_calendar_override_button.setAccessibleName("Clear calendar date")
-        self.clear_calendar_override_button.clicked.connect(self._clear_calendar_work_day)
+        self.clear_calendar_override_button.clicked.connect(
+            self._clear_calendar_work_day
+        )
         actions.addWidget(self.clear_calendar_override_button)
         details_layout.addLayout(actions)
 
@@ -1691,15 +1702,17 @@ class MainWindow(_MainWindowBehavior):
                 "error": "Needs attention",
             }[runtime_status["state"]]
             self.automation_status.setText(f"Automation: {state_text}")
-            self.ready_status.setText(runtime_status["message"])
         else:
             self.automation_status.setText(
                 "Automation: Active" if active else "Automation: Paused"
             )
         self.session_status.setText(
             "Reconnect required"
-            if runtime_status and runtime_status["code"] in ("session_expired", "session_required")
-            else "Profile saved" if self._has_valid_session() else "Session not saved"
+            if runtime_status
+            and runtime_status["code"] in ("session_expired", "session_required")
+            else "Profile saved"
+            if self._has_valid_session()
+            else "Session not saved"
         )
         self.retry_button.setEnabled(
             bool(
@@ -1714,14 +1727,18 @@ class MainWindow(_MainWindowBehavior):
     def _refresh_runtime_status(self) -> None:
         runtime_status = self.settings_store.get_settings()["automation_status"]
         status_key = (
-            runtime_status["state"],
-            runtime_status["code"],
-            runtime_status["updated_at"],
-        ) if runtime_status else None
+            (
+                runtime_status["state"],
+                runtime_status["code"],
+                runtime_status["updated_at"],
+            )
+            if runtime_status
+            else None
+        )
         self._refresh_session_status()
-        if runtime_status and runtime_status["state"] == "error":
-            self.settings_message.setText(runtime_status["message"])
-            if status_key != self._last_notified_status and self.tray_icon:
+        if runtime_status and status_key != self._last_notified_status:
+            self.ready_status.setText(runtime_status["message"])
+            if runtime_status["state"] == "error" and self.tray_icon:
                 self.tray_icon.showMessage(
                     "Form Automation needs attention",
                     runtime_status["message"],
@@ -1731,11 +1748,7 @@ class MainWindow(_MainWindowBehavior):
 
     def _save_settings(self, *_args) -> None:
         super()._save_settings(*_args)
-        if not (
-            self.settings_message.text().startswith("Choose a work-day")
-            or self.settings_message.text().startswith("Connect a Google")
-        ):
-            self._update_settings_message()
+        self._restore_persistent_runtime_error()
         self._refresh_status_bar()
 
     def _save_form_responses(self) -> None:
@@ -1744,29 +1757,31 @@ class MainWindow(_MainWindowBehavior):
             for key, editor in self.form_response_editors.items()
         }
         self.settings_store.update_form_responses(responses)
-        self._update_settings_message()
+        self._update_ready_status()
 
     def _save_all(self) -> None:
         self.response_save_timer.stop()
         self._save_form_responses()
         self._save_settings()
-        self.ready_status.setText("Ready")
 
-    def _update_settings_message(self) -> None:
-        runtime_status = self.settings_store.get_settings()["automation_status"]
-        if runtime_status and runtime_status["state"] == "error":
-            self.settings_message.setText(runtime_status["message"])
+    def _update_ready_status(self) -> None:
+        if self._restore_persistent_runtime_error():
             return
         time_value = self.schedule_time.time()
         schedule_time = f"{time_value.hour():02d}:{time_value.minute():02d}"
         if self.active_checkbox.isChecked():
-            self.settings_message.setText(
+            self.ready_status.setText(
                 f"Settings saved. Weekday submissions are scheduled at {schedule_time}."
             )
         else:
-            self.settings_message.setText(
-                "Settings saved. Automatic submission is paused."
-            )
+            self.ready_status.setText("Settings saved. Automatic submission is paused.")
+
+    def _restore_persistent_runtime_error(self) -> bool:
+        runtime_status = self.settings_store.get_settings()["automation_status"]
+        if runtime_status and runtime_status["state"] == "error":
+            self.ready_status.setText(runtime_status["message"])
+            return True
+        return False
 
     def _restore_window_geometry(self) -> None:
         geometry = self.ui_settings.value("window/geometry")
@@ -1875,11 +1890,10 @@ def main() -> None:
     )
     configure_playwright_browser_path()
     try:
-        settings = get_settings_store().get_settings()
-        apply_startup_preference(settings["start_at_login"])
+        apply_startup_preference(False)
     except OSError:
         logging.getLogger(__name__).exception(
-            "Could not update Form Automation's start-at-sign-in setting"
+            "Could not remove Form Automation's legacy start-at-sign-in setting"
         )
 
     application = QApplication(sys.argv)
@@ -1888,9 +1902,11 @@ def main() -> None:
     application.setQuitOnLastWindowClosed(False)
     if platform.system() == "Darwin":
         application.applicationStateChanged.connect(
-            lambda state: wakeup_scheduler()
-            if state == Qt.ApplicationState.ApplicationActive
-            else None
+            lambda state: (
+                wakeup_scheduler()
+                if state == Qt.ApplicationState.ApplicationActive
+                else None
+            )
         )
     _configure_font(application)
     window = MainWindow()

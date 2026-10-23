@@ -3,9 +3,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from form_automation.scripts.automation import (
+    AutomationError,
     GoogleVerificationRequiredError,
     FormUnavailableError,
     SessionExpiredError,
@@ -48,6 +50,7 @@ class FakeLocator:
 class FakePage:
     def __init__(self, url: str = "https://docs.google.com/forms/d/e/test/viewform") -> None:
         self.actions: list[tuple] = []
+        self.confirmation_script = ""
         self.url = url
 
     def goto(self, url: str, **_kwargs) -> None:
@@ -57,6 +60,7 @@ class FakePage:
         return FakeLocator(self, role, name)
 
     def wait_for_function(self, script: str, **_kwargs) -> None:
+        self.confirmation_script = script
         if "response has been recorded" in script:
             self.actions.append(("wait_for_confirmation",))
 
@@ -223,6 +227,48 @@ class FormAutomationTests(unittest.TestCase):
             ],
         )
         self.assertTrue(all(RESPONSES["key_tasks"] not in stage for stage in stages))
+
+    def test_confirmation_check_tolerates_a_page_without_a_body_during_navigation(self) -> None:
+        playwright = self.run_form(1)
+
+        self.assertIn("document.body?.innerText", playwright.page.confirmation_script)
+        self.assertIn("your response has been recorded", playwright.page.confirmation_script)
+
+    def test_post_submit_browser_error_warns_before_retrying(self) -> None:
+        playwright = FakePlaywright()
+        original_wait_for_function = playwright.page.wait_for_function
+
+        def fail_only_while_confirming(script: str, **kwargs) -> None:
+            if "your response has been recorded" in script:
+                raise PlaywrightError("confirmation navigation failed")
+            original_wait_for_function(script, **kwargs)
+
+        playwright.page.wait_for_function = fail_only_while_confirming
+
+        with (
+            patch("form_automation.scripts.automation.profile_directory", return_value="profile"),
+            patch("form_automation.scripts.automation._save_failure_diagnostics", return_value=""),
+            self.assertRaisesRegex(AutomationError, "may already have been submitted"),
+        ):
+            _fill_form(playwright, 1, RESPONSES)
+
+    def test_post_submit_timeout_warns_before_retrying(self) -> None:
+        playwright = FakePlaywright()
+        original_wait_for_function = playwright.page.wait_for_function
+
+        def timeout_only_while_confirming(script: str, **kwargs) -> None:
+            if "your response has been recorded" in script:
+                raise PlaywrightTimeoutError("confirmation timed out")
+            original_wait_for_function(script, **kwargs)
+
+        playwright.page.wait_for_function = timeout_only_while_confirming
+
+        with (
+            patch("form_automation.scripts.automation.profile_directory", return_value="profile"),
+            patch("form_automation.scripts.automation._save_failure_diagnostics", return_value=""),
+            self.assertRaisesRegex(AutomationError, "may already have been submitted"),
+        ):
+            _fill_form(playwright, 1, RESPONSES)
 
     def test_connection_test_checks_every_required_control_without_submitting(self) -> None:
         playwright = FakePlaywright()
