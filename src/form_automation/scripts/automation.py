@@ -24,6 +24,10 @@ FORM_RADIO_OPTIONS = (
     ("Working day - leave or absent", "It was a working day, but I was on leave or absent"),
 )
 DIAGNOSTICS_DIRECTORY = APP_DATA_DIRECTORY / "diagnostics"
+UNCONFIRMED_SUBMISSION_MESSAGE = (
+    "The form may already have been submitted, but the confirmation page "
+    "could not be checked. Check Google Forms before retrying."
+)
 
 logger = logging.getLogger("form_automation.automation")
 ProgressReporter = Callable[[str], None]
@@ -293,8 +297,9 @@ def _fill_form(
         _report_stage(progress_reporter, "Confirming submitted response.")
         page.wait_for_function(
             """() => {
-                const text = document.body.innerText.toLowerCase();
-                return text.includes('response has been recorded')
+                const text = (document.body?.innerText || '').toLowerCase();
+                return text.includes('your response has been recorded')
+                    || text.includes('response has been recorded')
                     || text.includes('response recorded')
                     || text.includes('thank you');
             }""",
@@ -307,7 +312,9 @@ def _fill_form(
             )
         else:
             error_to_raise = FormUnavailableError(
-                "The Google Form could not be filled or did not confirm the submission."
+                UNCONFIRMED_SUBMISSION_MESSAGE
+                if stage == "confirming submitted response"
+                else "The Google Form could not be filled or did not confirm the submission."
             )
         diagnostics = _save_failure_diagnostics(context, page, stage, trace_started)
         raise type(error_to_raise)(
@@ -318,8 +325,11 @@ def _fill_form(
         raise type(error)(f"Failed while {stage}. {error}{diagnostics}") from error
     except PlaywrightError as error:
         diagnostics = _save_failure_diagnostics(context, page, stage, trace_started)
+        message = "The browser could not submit the Google Form."
+        if stage == "confirming submitted response":
+            message = UNCONFIRMED_SUBMISSION_MESSAGE
         raise AutomationError(
-            f"Failed while {stage}. The browser could not submit the Google Form.{diagnostics}"
+            f"Failed while {stage}. {message}{diagnostics}"
         ) from error
     else:
         _stop_success_trace(context, trace_started)

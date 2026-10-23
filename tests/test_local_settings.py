@@ -22,7 +22,6 @@ class LocalSettingsStoreTests(unittest.TestCase):
             {
                 "work_day": None,
                 "automation_active": False,
-                "start_at_login": False,
                 "schedule_time": None,
                 "pending_task": None,
                 "automation_status": None,
@@ -37,12 +36,12 @@ class LocalSettingsStoreTests(unittest.TestCase):
             },
         )
 
-    def test_start_at_login_is_disabled_by_default_and_can_be_saved(self) -> None:
-        self.assertFalse(self.store.get_settings()["start_at_login"])
+    def test_legacy_start_at_login_setting_is_ignored(self) -> None:
+        settings = self.store.get_settings()
+        settings["start_at_login"] = True
+        self.settings_path.write_text(json.dumps(settings), encoding="utf-8")
 
-        self.store.update_start_at_login(True)
-
-        self.assertTrue(self.store.get_settings()["start_at_login"])
+        self.assertNotIn("start_at_login", self.store.get_settings())
 
     def test_settings_survive_store_recreation(self) -> None:
         self.store.update_automation_settings(work_day=2, automation_active=True)
@@ -55,7 +54,6 @@ class LocalSettingsStoreTests(unittest.TestCase):
             {
                 "work_day": 2,
                 "automation_active": True,
-                "start_at_login": False,
                 "schedule_time": "09:30",
                 "pending_task": None,
                 "automation_status": None,
@@ -74,7 +72,6 @@ class LocalSettingsStoreTests(unittest.TestCase):
             {
                 "work_day": 2,
                 "automation_active": True,
-                "start_at_login": False,
                 "schedule_time": "09:30",
                 "pending_task": None,
                 "automation_status": None,
