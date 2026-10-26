@@ -109,6 +109,107 @@ class DesktopStatusTests(unittest.TestCase):
             ("A current runtime message.",),
         )
 
+    def test_enabling_automation_registers_startup_at_sign_in(self) -> None:
+        window = MainWindow.__new__(MainWindow)
+        window.work_day_combo = Mock()
+        window.work_day_combo.currentData.return_value = 2
+        window.active_checkbox = Mock()
+        window.active_checkbox.isChecked.return_value = True
+        window.schedule_time = Mock()
+        window.schedule_time.time.return_value = SimpleNamespace(
+            hour=lambda: 9, minute=lambda: 30
+        )
+        window.settings_store = Mock()
+        window.ready_status = Mock()
+        window._has_valid_session = lambda: True
+        window._restore_persistent_runtime_error = Mock()
+        window._refresh_status_bar = Mock()
+
+        with (
+            patch.object(desktop, "sync_schedule"),
+            patch.object(desktop, "apply_startup_preference") as apply_preference,
+        ):
+            MainWindow._save_settings(window)
+
+        apply_preference.assert_called_once_with(True)
+
+    def test_failed_enable_reports_that_startup_could_not_be_added(self) -> None:
+        window = self._settings_save_window(automation_active=True)
+
+        with (
+            patch.object(desktop, "sync_schedule"),
+            patch.object(desktop, "apply_startup_preference", side_effect=OSError),
+        ):
+            desktop._MainWindowBehavior._save_settings(window)
+
+        self.assertEqual(
+            window.ready_status.setText.call_args.args,
+            (
+                "Automation is active, but Form Automation could not be set to start "
+                "when you sign in.",
+            ),
+        )
+
+    def test_failed_disable_warns_that_startup_may_remain_enabled(self) -> None:
+        window = self._settings_save_window(automation_active=False)
+
+        with (
+            patch.object(desktop, "sync_schedule"),
+            patch.object(desktop, "apply_startup_preference", side_effect=OSError),
+        ):
+            desktop._MainWindowBehavior._save_settings(window)
+
+        self.assertEqual(
+            window.ready_status.setText.call_args.args,
+            (
+                "Automation is paused, but the start-at-sign-in setting could not be "
+                "removed. Form Automation may still start when you sign in.",
+            ),
+        )
+
+    def test_startup_failure_is_shown_with_a_persistent_runtime_error(self) -> None:
+        window = MainWindow.__new__(MainWindow)
+        window.work_day_combo = Mock()
+        window.work_day_combo.currentData.return_value = 2
+        window.active_checkbox = Mock()
+        window.active_checkbox.isChecked.return_value = True
+        window.schedule_time = Mock()
+        window.schedule_time.time.return_value = SimpleNamespace(
+            hour=lambda: 9, minute=lambda: 30
+        )
+        window.settings_store = Mock()
+        window.settings_store.get_settings.return_value = {
+            "automation_status": self._runtime_status()
+        }
+        window.ready_status = Mock()
+        window._has_valid_session = lambda: True
+        window._refresh_status_bar = Mock()
+
+        with (
+            patch.object(desktop, "sync_schedule"),
+            patch.object(desktop, "apply_startup_preference", side_effect=OSError),
+        ):
+            MainWindow._save_settings(window)
+
+        message = window.ready_status.setText.call_args.args[0]
+        self.assertIn("A current runtime message.", message)
+        self.assertIn("could not be set to start when you sign in", message)
+
+    @staticmethod
+    def _settings_save_window(*, automation_active: bool) -> SimpleNamespace:
+        active_checkbox = Mock()
+        active_checkbox.isChecked.return_value = automation_active
+        return SimpleNamespace(
+            work_day_combo=Mock(currentData=Mock(return_value=2)),
+            active_checkbox=active_checkbox,
+            schedule_time=Mock(
+                time=Mock(return_value=SimpleNamespace(hour=lambda: 9, minute=lambda: 30))
+            ),
+            settings_store=Mock(),
+            ready_status=Mock(),
+            _has_valid_session=lambda: True,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1122,6 +1122,8 @@ class _MainWindowBehavior(QMainWindow):
         work_day = self.work_day_combo.currentData()
         automation_active = self.active_checkbox.isChecked()
         validation_message = ""
+        startup_error = ""
+        self._startup_error_message = ""
 
         if automation_active and work_day not in (1, 2, 3):
             validation_message = "Choose a work-day type before enabling automation."
@@ -1143,9 +1145,25 @@ class _MainWindowBehavior(QMainWindow):
         )
         self.settings_store.update_schedule_time(schedule_time)
         sync_schedule()
+        try:
+            apply_startup_preference(automation_active)
+        except OSError:
+            logging.getLogger(__name__).exception(
+                "Could not update Form Automation's start-at-sign-in setting"
+            )
+            startup_error = (
+                "Automation is active, but Form Automation could not be set to start "
+                "when you sign in."
+                if automation_active
+                else "Automation is paused, but the start-at-sign-in setting could not be "
+                "removed. Form Automation may still start when you sign in."
+            )
+            self._startup_error_message = startup_error
 
         if validation_message:
             self.ready_status.setText(validation_message)
+        elif startup_error:
+            self.ready_status.setText(startup_error)
         elif automation_active:
             self.ready_status.setText(
                 f"Saved. Weekday submissions are scheduled at {schedule_time}."
@@ -1779,7 +1797,11 @@ class MainWindow(_MainWindowBehavior):
     def _restore_persistent_runtime_error(self) -> bool:
         runtime_status = self.settings_store.get_settings()["automation_status"]
         if runtime_status and runtime_status["state"] == "error":
-            self.ready_status.setText(runtime_status["message"])
+            message = runtime_status["message"]
+            startup_error = getattr(self, "_startup_error_message", "")
+            if startup_error:
+                message = f"{message} {startup_error}"
+            self.ready_status.setText(message)
             return True
         return False
 
@@ -1890,10 +1912,11 @@ def main() -> None:
     )
     configure_playwright_browser_path()
     try:
-        apply_startup_preference(False)
+        settings = get_settings_store().get_settings()
+        apply_startup_preference(settings["automation_active"])
     except OSError:
         logging.getLogger(__name__).exception(
-            "Could not remove Form Automation's legacy start-at-sign-in setting"
+            "Could not update Form Automation's start-at-sign-in setting"
         )
 
     application = QApplication(sys.argv)
