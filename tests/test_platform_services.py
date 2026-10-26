@@ -56,12 +56,15 @@ class StartupServiceTests(unittest.TestCase):
     def test_linux_startup_is_not_supported(self) -> None:
         self.assertFalse(platform_services.StartupService(system_name="Linux").supported)
 
-    def test_desktop_entry_point_removes_the_legacy_startup_preference(self) -> None:
+    def test_desktop_entry_point_registers_startup_when_automation_is_active(self) -> None:
         from form_automation import desktop
 
         with tempfile.TemporaryDirectory() as directory:
+            settings_store = Mock()
+            settings_store.get_settings.return_value = {"automation_active": True}
             with (
                 patch.object(desktop, "APP_DATA_DIRECTORY", Path(directory)),
+                patch.object(desktop, "get_settings_store", return_value=settings_store),
                 patch.object(desktop, "apply_startup_preference") as apply_preference,
                 patch.object(desktop.logging, "basicConfig"),
                 patch.object(desktop, "configure_playwright_browser_path"),
@@ -74,7 +77,7 @@ class StartupServiceTests(unittest.TestCase):
                 application_class.return_value.exec.return_value = 0
                 desktop.main()
 
-        apply_preference.assert_called_once_with(False)
+        apply_preference.assert_called_once_with(True)
         window_class.return_value.show.assert_called_once_with()
 
 
