@@ -17,7 +17,7 @@ FORM_URL = (
     "1FAIpQLSc8RRUAG8n8nPB9dm21m_MxwHQ-JuDnEj7GnvwEkWXykkKFuQ"
     "/viewform"
 )
-ACCOUNT_CHECKBOX = "Record aryaan.panwar.s66@"
+ACCOUNT_CHECKBOX = "Record"
 FORM_RADIO_OPTIONS = (
     ("Campus holiday", "It was a campus holiday"),
     ("Working day - present", "It was a working day, and I"),
