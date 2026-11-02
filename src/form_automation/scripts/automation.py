@@ -228,7 +228,7 @@ def _fill_form(
             checkbox.click()
             page.wait_for_function(
                 """() => [...document.querySelectorAll('[role="checkbox"]')].some(
-                    element => element.getAttribute('aria-label')?.startsWith('Record aryaan.panwar.s66@')
+                    element => element.getAttribute('aria-label')?.startsWith('Record')
                         && element.getAttribute('aria-checked') === 'true'
                 )""",
                 timeout=15000,

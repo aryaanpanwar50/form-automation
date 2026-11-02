@@ -19,7 +19,7 @@ from form_automation.scripts.automation import (
 )
 
 
-CHECKBOX_NAME = "Record aryaan.panwar.s66@"
+CHECKBOX_NAME = "Record"
 RESPONSES = {
     "key_tasks": "Completed the assigned task.",
     "challenges": "None.",
