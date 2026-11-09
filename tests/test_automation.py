@@ -228,11 +228,19 @@ class FormAutomationTests(unittest.TestCase):
         )
         self.assertTrue(all(RESPONSES["key_tasks"] not in stage for stage in stages))
 
-    def test_confirmation_check_tolerates_a_page_without_a_body_during_navigation(self) -> None:
+    def test_confirmation_requires_an_explicit_recorded_response_message(self) -> None:
         playwright = self.run_form(1)
 
         self.assertIn("document.body?.innerText", playwright.page.confirmation_script)
         self.assertIn("your response has been recorded", playwright.page.confirmation_script)
+        self.assertNotIn(
+            "text.includes('response has been recorded')",
+            playwright.page.confirmation_script,
+        )
+        self.assertNotIn(
+            "text.includes('response recorded')", playwright.page.confirmation_script
+        )
+        self.assertNotIn("text.includes('thank you')", playwright.page.confirmation_script)
 
     def test_post_submit_browser_error_warns_before_retrying(self) -> None:
         playwright = FakePlaywright()

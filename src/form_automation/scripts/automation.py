@@ -298,10 +298,7 @@ def _fill_form(
         page.wait_for_function(
             """() => {
                 const text = (document.body?.innerText || '').toLowerCase();
-                return text.includes('your response has been recorded')
-                    || text.includes('response has been recorded')
-                    || text.includes('response recorded')
-                    || text.includes('thank you');
+                return text.includes('your response has been recorded');
             }""",
             timeout=15000,
         )

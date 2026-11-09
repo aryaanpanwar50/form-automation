@@ -4,6 +4,22 @@ A local Python desktop app that schedules the existing Google Form workflow on t
 The app has no cloud database or app-account sign-in. Google is contacted only for the
 Google Form and its sign-in session.
 
+## What it does
+
+- Runs a scheduled Google Form submission locally on weekdays.
+- Uses a dedicated Chromium profile for the Google account connected in the app.
+- Records the selected Google account email with the response when the form exposes the
+  **Record ... as the email to be included with my response** checkbox.
+- Supports one default work-day type and date-specific calendar overrides:
+  **Campus holiday**, **Working day · present**, or **Working day · leave or absent**.
+- Saves one pending task locally so an eligible task can run after the PC wakes later on
+  the same day.
+
+The app marks a task complete only after the Google Forms page explicitly says
+**Your response has been recorded**. A generic "Thank you" message is not treated as a
+successful submission.
+
+
 ## Run it
 
 Install Python 3.14 and `uv`, then from this folder run:
@@ -34,6 +50,25 @@ One pending task is saved locally. If the PC sleeps through its scheduled time, 
 runs that task after wake if it is still the same calendar day. At midnight, an older
 pending task expires; the next task follows the regular daily schedule.
 
+## Calendar overrides
+
+The Calendar tab changes the work-day type for one specific date; it does not submit a
+form immediately. Select a date, choose an option, then click **Save**. The saved
+override takes priority over the Home tab's default for that date.
+
+At the scheduled time, the app reads the queued date's override and follows the matching
+form path:
+
+| Calendar value | Form action |
+| --- | --- |
+| Campus holiday | Selects the campus-holiday answer, then submits. |
+| Working day · present | Selects present, fills the four response fields, then submits. |
+| Working day · leave or absent | Selects leave/absent, then submits. |
+
+Scheduled submissions run Monday through Friday. Keep the app running or minimized to
+the system tray at the scheduled time. The calendar override must be saved before the
+job runs.
+
 ## Local files
 
 Settings, the dedicated browser profile, legacy encrypted session data, and logs are
@@ -54,13 +89,38 @@ The schedule, form responses, and the latest submission status are stored in a l
 keeps the pending task and shows a tray and in-app error message. No database, cloud
 database, or remote app server is used.
 
+### Troubleshooting a submission
+
+Check the in-app status first. It identifies the last completed stage, such as checking
+the Google session, checking the account checkbox, selecting an answer, or confirming
+the submitted response.
+
+For a failed run, inspect:
+
+```text
+%LOCALAPPDATA%\FormAutomation\form-automation.log
+%LOCALAPPDATA%\FormAutomation\diagnostics\
+```
+
+The diagnostics folder contains a screenshot and Playwright trace for failed runs. Open
+a trace on a development machine with:
+
+```powershell
+uv run playwright show-trace path\to\submission-failure-....zip
+```
+
+The screenshot and trace can contain form content and the signed-in account email. Do
+not publish them or share the dedicated browser-profile directory.
+
 ## Build a Windows executable
 
 The GitHub Actions workflow at `.github/workflows/windows.yml` runs the Windows unit
 tests on pushes and pull requests. On pushes and manual runs, it builds a Windows x64
 app bundle and uploads `FormAutomation-windows-x64.zip` and
 `FormAutomation-Setup-windows-x64.exe` as workflow artifacts. Pushing a version tag
-such as `v0.1.0` also creates a GitHub Release with both files attached.
+such as `v0.2.8` also creates a GitHub Release with the installer attached. Create the
+version tag only after the intended commits, `pyproject.toml` version, and `uv.lock` are
+on `main`; release builds use the commit referenced by the tag.
 
 The zip contains the standalone executable, its Qt/Python dependencies, and the
 Playwright Chromium browser. Extract the full folder before running
