@@ -15,9 +15,10 @@ Google Form and its sign-in session.
 - Saves one pending task locally so an eligible task can run after the PC wakes later on
   the same day.
 
-The app marks a task complete only after the Google Forms page explicitly says
-**Your response has been recorded**. A generic "Thank you" message is not treated as a
-successful submission.
+The app marks a task complete only after clicking **Submit** and reaching a page where
+the visible Submit control is gone and Google Forms explicitly says **Your response has
+been recorded**. A generic "Thank you" message or matching text on the still-submittable
+form page is not treated as a successful submission.
 
 
 ## Run it
@@ -91,19 +92,31 @@ database, or remote app server is used.
 
 ### Troubleshooting a submission
 
-Check the in-app status first. It identifies the last completed stage, such as checking
-the Google session, checking the account checkbox, selecting an answer, or confirming
-the submitted response.
+Check the in-app status first. During a run, it shows the stage currently in progress.
+After a form error, it identifies the failed stage when available, such as checking the
+Google session, checking the account checkbox, selecting an answer, or confirming the
+submitted response.
 
 For a failed run, inspect:
+
+**Windows**
 
 ```text
 %LOCALAPPDATA%\FormAutomation\form-automation.log
 %LOCALAPPDATA%\FormAutomation\diagnostics\
 ```
 
-The diagnostics folder contains a screenshot and Playwright trace for failed runs. Open
-a trace on a development machine with:
+**macOS**
+
+```text
+~/Library/Application Support/FormAutomation/form-automation.log
+~/Library/Application Support/FormAutomation/diagnostics/
+```
+
+For failures after Chromium has started, the app attempts to save a screenshot and
+Playwright trace in the diagnostics folder. Either file can be missing if Chromium could
+not start or if saving diagnostics fails. When a trace `.zip` is available, open it on a
+development machine with:
 
 ```powershell
 uv run playwright show-trace path\to\submission-failure-....zip

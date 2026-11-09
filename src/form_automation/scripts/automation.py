@@ -298,7 +298,14 @@ def _fill_form(
         page.wait_for_function(
             """() => {
                 const text = (document.body?.innerText || '').toLowerCase();
-                return text.includes('your response has been recorded');
+                const hasVisibleSubmit = [...document.querySelectorAll('[role="button"], button')]
+                    .some(element => {
+                        const label = (element.getAttribute('aria-label') || element.textContent || '')
+                            .trim()
+                            .toLowerCase();
+                        return label === 'submit' && element.getClientRects().length > 0;
+                    });
+                return text.includes('your response has been recorded') && !hasVisibleSubmit;
             }""",
             timeout=15000,
         )

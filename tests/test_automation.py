@@ -228,11 +228,14 @@ class FormAutomationTests(unittest.TestCase):
         )
         self.assertTrue(all(RESPONSES["key_tasks"] not in stage for stage in stages))
 
-    def test_confirmation_requires_an_explicit_recorded_response_message(self) -> None:
+    def test_confirmation_requires_the_submit_page_to_be_replaced(self) -> None:
         playwright = self.run_form(1)
 
         self.assertIn("document.body?.innerText", playwright.page.confirmation_script)
         self.assertIn("your response has been recorded", playwright.page.confirmation_script)
+        self.assertIn("hasVisibleSubmit", playwright.page.confirmation_script)
+        self.assertIn("element.getClientRects().length > 0", playwright.page.confirmation_script)
+        self.assertIn("!hasVisibleSubmit", playwright.page.confirmation_script)
         self.assertNotIn(
             "text.includes('response has been recorded')",
             playwright.page.confirmation_script,
